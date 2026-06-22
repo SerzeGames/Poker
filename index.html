@@ -75,6 +75,9 @@
   .lobby-row{background:#1a1e24;border:1px solid #2c323b;border-radius:10px;
     padding:11px 14px;text-align:left;font-size:15px;font-weight:700;color:#e7ebf0;}
   .lobby-row.dim{color:#8b94a0;font-weight:600;background:transparent;border-style:dashed;}
+  .ov-btn.seg-toggle.on{border-color:var(--green);color:#dff5e4;
+    background:linear-gradient(180deg,#244e34,#173524);}
+  .ov-btn.primary[data-block]{filter:grayscale(.6) brightness(.7);cursor:default;}
   #rotate{display:none;}
 </style>
 </head>
@@ -288,6 +291,10 @@ let chipFx=[];          // jetons en mouvement (animations)
 
 /* ----------------------- Multijoueur (PeerJS) -------------------- */
 const MAX_SEATS=5;
+const ROOM_PREFIX='serzepoker-';   // identifiants PeerJS des salles
+const MAX_ROOMS=16;                // nombre de parties simultanées possibles
+let roomNum=0;                     // numéro de salle de l'hôte
+let scanState=null;                // invité : recherche de partie en cours
 let netRole='solo';     // 'solo' | 'host' | 'guest'
 let peer=null;          // objet PeerJS
 let guestConns=[];      // hôte : connexions vers les invités (chacune a ._seat, ._name)
@@ -296,6 +303,7 @@ let myName='Joueur';
 let roomCode='';
 let awaitingRemote=null;// hôte : connexion dont on attend l'action (ou null)
 let netStarted=false;   // partie en ligne lancée
+let fillAI=true;        // hôte : compléter les sièges vides par des IA (sinon : humains seulement)
 let hbTimer=null;       // hôte : diffusion régulière de l'état
 let lobbyData=null;     // invité : dernière liste du salon reçue
 
@@ -403,7 +411,8 @@ function buildRoster(){
     for(let i=1;i<MAX_SEATS;i++){
       const c=connForSeat(i);
       if(c) players.push({ name:c._name||('Joueur '+i), isHuman:true, idx:i, local:false, conn:c });
-      else  players.push(makeAI(i, names.pop()));
+      else if(fillAI) players.push(makeAI(i, names.pop()));
+      else players.push({ name:'', isHuman:false, idx:i, empty:true });   // siège vide (sans IA)
     }
   } else { // solo
     players.push({ name:'Vous', isHuman:true, idx:0, local:true });
@@ -414,13 +423,19 @@ function buildRoster(){
     p.folded=false; p.allIn=false; p.busted=false; p.hasActed=false;
     p.place=null; p.lastWin=0; p.bustedAt=null;
   });
+  // les sièges vides sont hors-jeu (traités comme éliminés, invisibles)
+  players.forEach(p=>{ if(p.empty){ p.busted=true; p.bustedAt=null; p.folded=true; p.stack=0; } });
 }
+function seatedCount(){ return players.filter(p=>!p.empty).length; }
 function initTournament(){
   buildRoster();
-  dealer=Math.floor(Math.random()*players.length);
+  do { dealer=Math.floor(Math.random()*players.length); } while(players[dealer] && players[dealer].empty);
   handNumber=0; eliminatedCount=0; level=0; logLines=[]; chipFx=[];
   const humans = players.filter(p=>p.isHuman).length;
-  log('Tournoi Sit & Go — '+MAX_SEATS+' joueurs'+(isHost()?(' ('+humans+' humain'+(humans>1?'s':'')+', '+(MAX_SEATS-humans)+' IA)'):'')+'.');
+  const ai = players.filter(p=>!p.isHuman && !p.empty).length;
+  let info='';
+  if(isHost()) info = ' ('+humans+' humain'+(humans>1?'s':'')+(ai>0?(' + '+ai+' IA'):'')+(ai===0?' · sans ordinateur':'')+')';
+  log('Tournoi Sit & Go — '+seatedCount()+' joueurs'+info+'.');
   if(isHost()) startHeartbeat();
   scheduleNext(500, startHand);
 }
@@ -626,7 +641,7 @@ function nextHandOrEnd(){
                              .sort((a,b)=> (a.stackAtHand||0)-(b.stackAtHand||0));
   newlyBusted.forEach(p=>{
     p.busted=true; p.bustedAt=performance.now(); eliminatedCount++;
-    p.place = players.length - eliminatedCount + 1;
+    p.place = seatedCount() - eliminatedCount + 1;
     log(p.name+' est éliminé ('+ordinal(p.place)+').');
   });
 
@@ -1666,7 +1681,7 @@ function seatData(p, recipient){
   const visible = (p.idx===recipient) ||
                   (revealAll && !p.folded && !p.busted && p.cards && p.cards.length===2);
   return {
-    name:p.name||'', isHuman:!!p.isHuman, archetype:p.archetype||null,
+    name:p.name||'', isHuman:!!p.isHuman, archetype:p.archetype||null, empty:!!p.empty,
     stack:Math.round(p.stack||0), bet:Math.round(p.bet||0), totalBet:Math.round(p.totalBet||0),
     folded:!!p.folded, allIn:!!p.allIn, busted:!!p.busted, hasActed:!!p.hasActed,
     lastWin:Math.round(p.lastWin||0), place:p.place||null,
@@ -1705,14 +1720,15 @@ function applyState(s){
   s.seats.forEach((sd,i)=>{
     let p=players[i]; if(!p){ p={idx:i}; players[i]=p; }
     p.idx=i;
-    if(sd==null){ p.empty=true; p.name=''; p.isHuman=false; p.folded=true; p.busted=true; p.cards=[]; p.stack=0; p.bet=0; p.lastWin=0; return; }
-    p.empty=false;
+    if(sd==null){ p.empty=true; p.name=''; p.isHuman=false; p.folded=true; p.busted=true; p.bustedAt=null; p.cards=[]; p.stack=0; p.bet=0; p.lastWin=0; return; }
+    p.empty=!!sd.empty;
     p.name=sd.name; p.isHuman=sd.isHuman; p.archetype=sd.archetype;
     p.stack=sd.stack; p.bet=sd.bet; p.totalBet=sd.totalBet;
     p.folded=sd.folded; p.allIn=sd.allIn; p.hasActed=sd.hasActed;
     p.lastWin=sd.lastWin; p.place=sd.place; p.hasCards=sd.hasCards;
     p.cards = sd.cards ? sd.cards : [];
-    if(sd.busted){ if(!p.busted){ p.busted=true; p.bustedAt=performance.now(); } }
+    if(sd.empty){ p.busted=true; p.bustedAt=null; }     // siège vide : invisible, pas d'animation
+    else if(sd.busted){ if(!p.busted){ p.busted=true; p.bustedAt=performance.now(); } }
     else { p.busted=false; p.bustedAt=null; }
   });
   community=s.community||[];
@@ -1762,30 +1778,30 @@ function hostHandleData(conn, msg){
 function startHostLobby(){
   if(typeof Peer==='undefined'){ showPeerError(); return; }
   netRole='host'; netStarted=false; guestConns=[];
-  let tries=0;
-  const tryOpen=()=>{
-    roomCode=randCode();
-    if(peer){ try{peer.destroy();}catch(e){} }
-    peer=new Peer('serzepoker-'+roomCode);
-    peer.on('open', ()=>renderHostLobby());
-    peer.on('error', e=>{
-      if(e && e.type==='unavailable-id' && tries++<4) tryOpen();
-      else showPeerError(e);
+  claimRoom(1);
+  renderHostLobby();      // « création de la partie… »
+}
+function claimRoom(n){
+  if(n>MAX_ROOMS){ showPeerError({type:'no-room'}); return; }
+  roomNum=n; roomCode='n°'+n;
+  if(peer){ try{peer.destroy();}catch(e){} }
+  peer=new Peer(ROOM_PREFIX+'r'+n);
+  peer.on('open', ()=>renderHostLobby());
+  peer.on('error', e=>{
+    if(e && e.type==='unavailable-id') claimRoom(n+1);   // salle prise -> on prend la suivante
+    else showPeerError(e);
+  });
+  peer.on('connection', conn=>{
+    conn.on('open', ()=>{
+      if(netStarted || firstFreeSeat()<0){ netSafe(()=>conn.send({t:'full'})); setTimeout(()=>{try{conn.close();}catch(e){}},250); return; }
+      conn._seat=firstFreeSeat(); conn._name='Joueur '+conn._seat;
+      guestConns.push(conn);
+      broadcastLobby();
     });
-    peer.on('connection', conn=>{
-      conn.on('open', ()=>{
-        if(netStarted || firstFreeSeat()<0){ netSafe(()=>conn.send({t:'full'})); setTimeout(()=>{try{conn.close();}catch(e){}},250); return; }
-        conn._seat=firstFreeSeat(); conn._name='Joueur '+conn._seat;
-        guestConns.push(conn);
-        broadcastLobby();
-      });
-      conn.on('data', msg=>hostHandleData(conn,msg));
-      conn.on('close', ()=>hostGuestLeft(conn));
-      conn.on('error', ()=>hostGuestLeft(conn));
-    });
-  };
-  tryOpen();
-  renderHostLobby();
+    conn.on('data', msg=>hostHandleData(conn,msg));
+    conn.on('close', ()=>hostGuestLeft(conn));
+    conn.on('error', ()=>hostGuestLeft(conn));
+  });
 }
 function hostGuestLeft(conn){
   const seat=conn._seat;
@@ -1793,9 +1809,15 @@ function hostGuestLeft(conn){
   if(netStarted && seat!=null && players[seat]){
     const p=players[seat];
     if(p.isHuman && !p.busted){
-      const ai=makeAI(seat, (p.name||('Siège '+seat))+' (IA)');
-      Object.assign(p,{isHuman:false, local:false, conn:null, name:ai.name, archetype:ai.archetype, personality:ai.personality});
-      log(p.name+' : joueur déconnecté, repris par l’IA.');
+      if(fillAI){
+        const ai=makeAI(seat, (p.name||('Siège '+seat))+' (IA)');
+        Object.assign(p,{isHuman:false, local:false, conn:null, name:ai.name, archetype:ai.archetype, personality:ai.personality});
+        log(p.name+' : joueur déconnecté, repris par l’IA.');
+      } else {
+        log((p.name||('Siège '+seat))+' a quitté la partie.');
+        Object.assign(p,{isHuman:false, conn:null, folded:true, busted:true, bustedAt:performance.now()});
+        eliminatedCount++;
+      }
       if(currentPlayer===seat && awaitingRemote===conn){ awaitingRemote=null; gameStep(); }
       netPush();
     }
@@ -1809,26 +1831,48 @@ function hostStartGame(){
   initTournament();
 }
 
-/* ---- Invité : se connecter à un hôte ---- */
-function joinGame(code){
+/* ---- Invité : recherche automatique d'une partie (sans code) ---- */
+function joinGame(){
   if(typeof Peer==='undefined'){ showPeerError(); return; }
   netRole='guest';
-  roomCode=(''+code).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
   if(peer){ try{peer.destroy();}catch(e){} }
   peer=new Peer();
+  scanState=null;
   renderJoinWaiting('Connexion au serveur…');
-  peer.on('open', ()=>{
-    renderJoinWaiting('Connexion à la table '+roomCode+'…');
-    hostConn=peer.connect('serzepoker-'+roomCode, {reliable:true});
-    hostConn.on('open', ()=>{ netSafe(()=>hostConn.send({t:'join', name:myName})); renderJoinWaiting('Connecté. En attente de l’hôte…'); });
-    hostConn.on('data', msg=>guestHandleData(msg));
-    hostConn.on('close', ()=>{ if(started) alert('Connexion à l’hôte perdue.'); showStart(); });
-    hostConn.on('error', ()=>renderJoinWaiting('Table introuvable. Vérifiez le code.'));
-  });
+  peer.on('open', ()=>scanFrom(1));
   peer.on('error', e=>{
-    if(e && e.type==='peer-unavailable') renderJoinWaiting('Table introuvable. Vérifiez le code.');
+    if(e && e.type==='peer-unavailable'){ scanAdvance(); }   // salle vide -> suivante
+    else if(scanState){ scanAdvance(); }
     else showPeerError(e);
   });
+}
+function scanFrom(n){
+  if(n>MAX_ROOMS){ scanState=null; renderNoGame(); return; }
+  if(scanState && scanState.conn){ try{scanState.conn.close();}catch(e){} clearTimeout(scanState.timer); }
+  renderJoinWaiting('Recherche d’une partie… ('+n+'/'+MAX_ROOMS+')');
+  const c=peer.connect(ROOM_PREFIX+'r'+n, {reliable:true});
+  scanState={n, conn:c, done:false, timer:null};
+  scanState.timer=setTimeout(()=>{ if(scanState && !scanState.done && scanState.n===n) scanAdvance(); }, 1600);
+  c.on('open', ()=>{ if(scanState && scanState.n===n && !scanState.done) netSafe(()=>c.send({t:'join', name:myName})); });
+  c.on('data', msg=>{
+    if(!scanState || scanState.done){ if(c===hostConn) guestHandleData(msg); return; }
+    if(msg.t==='full'){ scanAdvance(); return; }            // partie pleine/lancée -> suivante
+    // acceptés (lobby) : on est dans la partie
+    scanState.done=true; clearTimeout(scanState.timer);
+    hostConn=c; roomCode='n°'+scanState.n;
+    c.on('close', ()=>{ if(started) alert('Connexion à l’hôte perdue.'); showStart(); });
+    scanState=null;
+    guestHandleData(msg);
+  });
+  c.on('error', ()=>{ if(scanState && scanState.n===n && !scanState.done) scanAdvance(); });
+}
+function scanAdvance(){
+  if(!scanState) return;
+  const next=scanState.n+1;
+  if(scanState.conn){ try{scanState.conn.close();}catch(e){} }
+  clearTimeout(scanState.timer);
+  scanState=null;
+  scanFrom(next);
 }
 function guestHandleData(msg){
   if(!msg||!msg.t) return;
@@ -1837,7 +1881,7 @@ function guestHandleData(msg){
   else if(msg.t==='state'){ applyState(msg); }
   else if(msg.t==='fx'){ if(msg.k==='collect') collectBetsAnim(); else if(msg.k==='award') (msg.seats||[]).forEach(s=>spawnAwardAnim(s,0)); }
   else if(msg.t==='over'){ started=false; showNetOver(msg.name); }
-  else if(msg.t==='full'){ renderJoinWaiting('La table est pleine.'); }
+  else if(msg.t==='full'){ /* géré pendant le scan */ }
 }
 function restartTournament(){
   hideOverlay();
@@ -1848,6 +1892,7 @@ function restartTournament(){
 }
 function netQuit(){
   stopHeartbeat();
+  if(scanState && scanState.conn){ try{scanState.conn.close();}catch(e){} } scanState=null;
   guestConns.forEach(c=>{ try{c.close();}catch(e){} });
   guestConns=[]; if(hostConn){ try{hostConn.close();}catch(e){} } hostConn=null;
   if(peer){ try{peer.destroy();}catch(e){} } peer=null;
@@ -1855,7 +1900,6 @@ function netQuit(){
   clearTimeout(pendingTimer);
   showStart();
 }
-function randCode(){ const C='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=C[Math.floor(Math.random()*C.length)]; return s; }
 function esc(s){ return (''+s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 
 /* ---- Salons / écrans réseau ---- */
@@ -1867,31 +1911,39 @@ function wireDiff(){
 }
 function renderHostLobby(){
   const list=lobbyList(); const ai=MAX_SEATS-list.length;
-  const rows=list.map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}${p.host?' · vous':''}</div>`).join('')
-            + (ai>0?`<div class="lobby-row dim">+ ${ai} siège(s) comblé(s) par l’IA</div>`:'');
+  const others=list.length-1, humans=list.length;
+  const emptyLine = ai>0 ? (fillAI
+        ? `<div class="lobby-row dim">+ ${ai} siège(s) comblé(s) par l’IA</div>`
+        : `<div class="lobby-row dim">${ai} siège(s) laissé(s) vide(s)</div>`) : '';
+  const rows=list.map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}${p.host?' · vous':''}</div>`).join('') + emptyLine;
+  const canStart = fillAI || humans>=2;
+  const goLabel = !fillAI && humans<2 ? 'En attente d’un 2ᵉ joueur…'
+                  : (humans>1 ? 'Démarrer ('+humans+' joueurs)' : 'Démarrer (solo + IA)');
   showOverlay(`
-    <div class="ov-kicker">Salon en ligne — Hôte</div>
-    <h1 class="ov-title">Code&nbsp;: <span style="color:var(--gold);letter-spacing:.12em">${esc(roomCode||'…')}</span></h1>
-    <p class="ov-sub">Communiquez ce code aux autres joueurs. Jusqu’à ${MAX_SEATS} joueurs ; les sièges libres sont tenus par l’IA.</p>
+    <div class="ov-kicker">Partie en ligne — Hôte</div>
+    <h1 class="ov-title">En attente de joueurs…</h1>
+    <p class="ov-sub">Les joueurs qui cliquent sur <b>Rejoindre</b> arrivent ici automatiquement. ${fillAI?'Les sièges libres sont tenus par l’IA.':'Aucun ordinateur : la partie se joue entre humains.'}</p>
     <div class="lobby-list">${rows}</div>
-    <div class="diff-title">Niveau de l’IA</div>
+    <button class="ov-btn ghost seg-toggle ${fillAI?'':'on'}" id="btnAI">${fillAI?'🤖 Compléter avec des IA':'🧍 Sans ordinateur — humains seulement ✓'}</button>
+    ${fillAI?`<div class="diff-title">Niveau de l’IA</div>
     <div class="seg" id="diffSeg">
       <button data-d="facile">Facile<span class="lbl">passifs</span></button>
       <button data-d="normal">Normal<span class="lbl">équilibrés</span></button>
       <button data-d="agressif">Agressif<span class="lbl">bluffeurs</span></button>
-    </div>
-    <button class="ov-btn primary" id="btnGo">Démarrer la partie</button>
+    </div>`:''}
+    <button class="ov-btn primary" id="btnGo" ${canStart?'':'data-block="1"'}>${goLabel}</button>
     <button class="ov-btn ghost" id="btnCancel">Annuler</button>
   `);
-  wireDiff();
-  document.getElementById('btnGo').onclick=hostStartGame;
+  if(fillAI) wireDiff();
+  document.getElementById('btnAI').onclick=()=>{ fillAI=!fillAI; renderHostLobby(); };
+  document.getElementById('btnGo').onclick=()=>{ if(canStart) hostStartGame(); };
   document.getElementById('btnCancel').onclick=netQuit;
 }
 function renderGuestLobby(msg){
   const rows=(msg.list||[]).map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}</div>`).join('');
   showOverlay(`
-    <div class="ov-kicker">Salon en ligne — Invité</div>
-    <h1 class="ov-title">Table ${esc(msg.code||roomCode)}</h1>
+    <div class="ov-kicker">Partie en ligne — Invité</div>
+    <h1 class="ov-title">Partie rejointe&nbsp;!</h1>
     <p class="ov-sub">En attente du lancement par l’hôte…</p>
     <div class="lobby-list">${rows}</div>
     <button class="ov-btn ghost" id="btnLeave">Quitter</button>
@@ -1901,11 +1953,24 @@ function renderGuestLobby(msg){
 function renderJoinWaiting(text){
   showOverlay(`
     <div class="ov-kicker">Rejoindre une partie</div>
-    <h1 class="ov-title">Table ${esc(roomCode||'…')}</h1>
+    <h1 class="ov-title">Recherche…</h1>
     <p class="ov-sub">${esc(text)}</p>
     <button class="ov-btn ghost" id="btnLeave">Annuler</button>
   `);
   document.getElementById('btnLeave').onclick=netQuit;
+}
+function renderNoGame(){
+  showOverlay(`
+    <div class="ov-kicker">Rejoindre une partie</div>
+    <h1 class="ov-title">Aucune partie disponible</h1>
+    <p class="ov-sub">Personne n’héberge de partie pour l’instant. Réessayez, ou créez la vôtre — les autres vous rejoindront.</p>
+    <button class="ov-btn primary" id="bRetry">Réessayer</button>
+    <button class="ov-btn ghost" id="bHost">Créer une partie</button>
+    <button class="ov-btn ghost" id="bBack">Retour</button>
+  `);
+  document.getElementById('bRetry').onclick=joinGame;
+  document.getElementById('bHost').onclick=startHostLobby;
+  document.getElementById('bBack').onclick=netQuit;
 }
 function showPeerError(e){
   showOverlay(`
@@ -1954,7 +2019,7 @@ function showStart(){
   const grab=()=>{ myName=((ni.value||'').trim().slice(0,14))||'Joueur'; };
   document.getElementById('bSolo').onclick=()=>{ grab(); showSolo(); };
   document.getElementById('bHost').onclick=()=>{ grab(); startHostLobby(); };
-  document.getElementById('bJoin').onclick=()=>{ grab(); showJoinPrompt(); };
+  document.getElementById('bJoin').onclick=()=>{ grab(); joinGame(); };
 }
 function showSolo(){
   netRole='solo';
@@ -1976,22 +2041,7 @@ function showSolo(){
   document.getElementById('btnPlay').onclick=()=>{ initAudio(); hideOverlay(); started=true; initTournament(); };
   document.getElementById('btnBack').onclick=showStart;
 }
-function showJoinPrompt(){
-  showOverlay(`
-    <div class="ov-kicker">Rejoindre une partie</div>
-    <h1 class="ov-title">Code de la table</h1>
-    <p class="ov-sub">Saisissez le code à 4 caractères communiqué par l’hôte.</p>
-    <label class="fld">Code
-      <input id="codeInput" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase;letter-spacing:.2em;text-align:center;font-weight:800">
-    </label>
-    <button class="ov-btn primary" id="bGo">Rejoindre</button>
-    <button class="ov-btn ghost" id="bBack">Retour</button>
-  `);
-  const go=()=>{ const c=(document.getElementById('codeInput').value||'').trim(); if(c.length>=3) joinGame(c); };
-  document.getElementById('bGo').onclick=go;
-  document.getElementById('codeInput').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
-  document.getElementById('bBack').onclick=showStart;
-}
+function showJoinPrompt(){ joinGame(); }   // (compat) — la recherche est automatique
 
 function openMenu(){
   const dl={facile:'faciles',normal:'normaux',agressif:'agressifs'}[difficulty];
@@ -2022,7 +2072,7 @@ function showEliminated(place){
   showOverlay(`
     <div class="ov-kicker" style="color:var(--red)">Éliminé</div>
     <h1 class="ov-title">Fin de parcours</h1>
-    <p class="ov-sub">Vous terminez <b>${ordinal(place)}</b> sur ${players.length}.
+    <p class="ov-sub">Vous terminez <b>${ordinal(place)}</b> sur ${seatedCount()}.
        La partie continue sans vous.</p>
     <button class="ov-btn primary" id="eAgain">Rejouer</button>
     <button class="ov-btn ghost" id="eWatch">Voir la fin</button>
