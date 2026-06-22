@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Texas Hold'em — Sit & Go</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{
+    --felt-1:#2f8a4e; --felt-2:#1f6b3a; --felt-edge:#0d3f22;
+    --rail-1:#4a4f57; --rail-2:#23262c;
+    --bg-1:#171a1f; --bg-2:#0a0c10;
+    --pod-1:#2a2f37; --pod-2:#13161b;
+    --green:#7ee08a; --gold:#ffd54a; --red:#d6263b;
+    --txt:#f3f5f7;
+    --btn-fold-1:#c4313f; --btn-fold-2:#8e1f29;
+    --btn-call-1:#3fae5e; --btn-call-2:#1f7a3c;
+    --btn-raise-1:#e9b53b; --btn-raise-2:#b8821a;
+    --btn-neutral-1:#3a4049; --btn-neutral-2:#22262d;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;color:var(--txt);}
+  #game{position:fixed;inset:0;background:
+    radial-gradient(ellipse 120% 90% at 50% 38%, var(--bg-1) 0%, var(--bg-2) 78%);}
+  #cv{position:absolute;inset:0;display:block;touch-action:none;}
+
+  /* ---------- Overlays ---------- */
+  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(4,6,9,.72);backdrop-filter:blur(5px);z-index:50;padding:18px;}
+  #overlay.show{display:flex;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .card-panel{width:min(440px,94vw);background:
+      linear-gradient(160deg,#1d2128,#0e1116);
+    border:1px solid #353b44;border-radius:20px;padding:26px 24px 22px;
+    box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);text-align:center;}
+  .ov-kicker{font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--green);
+    font-weight:700;margin-bottom:8px;}
+  .ov-title{font-size:30px;font-weight:800;letter-spacing:-.5px;margin:0 0 6px;}
+  .ov-sub{font-size:15px;line-height:1.5;color:#aab2bd;margin:0 0 20px;}
+  .ov-sub b{color:var(--gold);font-weight:700;}
+  .ov-btn{display:block;width:100%;border:none;border-radius:12px;padding:15px 16px;margin:9px 0 0;
+    font-size:16px;font-weight:700;cursor:pointer;color:#fff;letter-spacing:.01em;
+    transition:transform .08s ease,filter .15s ease;}
+  .ov-btn:active{transform:translateY(1px) scale(.995);}
+  .ov-btn.primary{background:linear-gradient(180deg,var(--btn-call-1),var(--btn-call-2));
+    box-shadow:0 6px 18px rgba(35,140,70,.35);}
+  .ov-btn.ghost{background:linear-gradient(180deg,var(--btn-neutral-1),var(--btn-neutral-2));
+    border:1px solid #3c424b;}
+  .ov-btn.primary:hover,.ov-btn.ghost:hover{filter:brightness(1.07);}
+  .chips-row{display:flex;gap:7px;justify-content:center;margin:4px 0 16px;font-size:30px;}
+  .seat-tag{font-size:13px;color:#8b94a0;margin-top:14px;}
+  .rules{font-size:12.5px;color:#8b94a0;line-height:1.6;text-align:left;
+    background:rgba(255,255,255,.03);border:1px solid #2b313a;border-radius:12px;
+    padding:12px 14px;margin:2px 0 4px;}
+  .rules b{color:#cdd4dd;}
+  .diff-title{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8b94a0;
+    font-weight:700;text-align:left;margin:8px 2px 7px;}
+  .seg{display:flex;gap:8px;margin:0 0 16px;}
+  .seg button{flex:1;border:1px solid #3c424b;border-radius:11px;padding:9px 4px;
+    background:linear-gradient(180deg,#2a2f37,#191c21);color:#cdd4dd;font-size:13.5px;
+    font-weight:700;cursor:pointer;transition:filter .12s ease,border-color .12s ease;line-height:1.15;}
+  .seg button .lbl{display:block;font-size:10.5px;font-weight:600;color:#8b94a0;margin-top:2px;}
+  .seg button.sel{border-color:var(--green);color:#fff;
+    background:linear-gradient(180deg,#2e6b43,#1c5030);box-shadow:0 0 0 1px rgba(126,224,138,.4) inset;}
+  .seg button.sel .lbl{color:#bfeccb;}
+  .seg button:hover{filter:brightness(1.08);}
+  .fld{display:block;text-align:left;font-size:12px;color:#8b94a0;font-weight:700;
+    letter-spacing:.04em;margin:4px 2px 14px;}
+  .fld input{display:block;width:100%;margin-top:7px;box-sizing:border-box;
+    background:#15181d;border:1px solid #3c424b;border-radius:11px;color:#eef1f4;
+    font-size:17px;font-weight:600;padding:12px 14px;outline:none;}
+  .fld input:focus{border-color:var(--green);box-shadow:0 0 0 1px rgba(126,224,138,.35);}
+  .lobby-list{display:flex;flex-direction:column;gap:7px;margin:4px 0 14px;}
+  .lobby-row{background:#1a1e24;border:1px solid #2c323b;border-radius:10px;
+    padding:11px 14px;text-align:left;font-size:15px;font-weight:700;color:#e7ebf0;}
+  .lobby-row.dim{color:#8b94a0;font-weight:600;background:transparent;border-style:dashed;}
+  #rotate{display:none;}
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="cv"></canvas>
+  <div id="overlay"><div class="card-panel" id="ovPanel"></div></div>
+</div>
+
+<script>
+"use strict";
+/* ======================================================================
+   TEXAS HOLD'EM — Sit & Go (1 joueur + 4 IA)  •  Canvas, fichier unique
+   ====================================================================== */
+
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const ovPanel = document.getElementById('ovPanel');
+
+let cssW = window.innerWidth, cssH = window.innerHeight;
+
+/* ----------------------------- Utils ------------------------------ */
+const clamp = (a,v,b)=> Math.max(a, Math.min(b, v));
+const fmt = n => Math.round(n).toLocaleString('fr-FR');
+function inRect(x,y,r){ return r && x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h; }
+function ordinal(n){ return n===1 ? '1ʳ' : (n+'ᵉ'); }
+
+function roundRect(c,x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  c.beginPath();
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);
+  c.closePath();
+}
+
+/* --------------------------- Cards / Deck -------------------------- */
+const SUITS = [
+  {sym:'♠', col:'#1a1a1a'},
+  {sym:'♥', col:'#d6263b'},
+  {sym:'♦', col:'#d6263b'},
+  {sym:'♣', col:'#1a1a1a'}
+];
+function rankName(r){
+  return r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'10':String(r);
+}
+function buildDeck(){
+  const d=[];
+  for(let s=0;s<4;s++) for(let r=2;r<=14;r++) d.push({r,s});
+  return d;
+}
+function shuffle(d){
+  for(let i=d.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [d[i],d[j]]=[d[j],d[i]];
+  }
+  return d;
+}
+
+/* ------------------------ Hand evaluation -------------------------- */
+// categorie: 0 hauteur .. 8 quinte flush. tb = tie-breakers (haut->bas).
+function evaluate5(cards){
+  const ranks = cards.map(c=>c.r).sort((a,b)=>b-a);
+  const suits = cards.map(c=>c.s);
+  const flush = suits.every(s=>s===suits[0]);
+  const uniq = [...new Set(ranks)];
+  let straight=false, sHigh=0;
+  if(uniq.length===5){
+    if(uniq[0]-uniq[4]===4){ straight=true; sHigh=uniq[0]; }
+    else if(uniq[0]===14 && uniq[1]===5 && uniq[2]===4 && uniq[3]===3 && uniq[4]===2){
+      straight=true; sHigh=5; // roue A-2-3-4-5
+    }
+  }
+  const counts={};
+  ranks.forEach(r=> counts[r]=(counts[r]||0)+1);
+  const groups = Object.keys(counts).map(r=>({r:+r, c:counts[r]}));
+  groups.sort((a,b)=> b.c-a.c || b.r-a.r);
+  const pattern = groups.map(g=>g.c).join('');
+  const gtb = groups.map(g=>g.r);
+
+  if(straight && flush) return {category:8, tb:[sHigh]};
+  if(pattern==='41')    return {category:7, tb:gtb};
+  if(pattern==='32')    return {category:6, tb:gtb};
+  if(flush)             return {category:5, tb:ranks};
+  if(straight)          return {category:4, tb:[sHigh]};
+  if(pattern==='311')   return {category:3, tb:gtb};
+  if(pattern==='221')   return {category:2, tb:gtb};
+  if(pattern==='2111')  return {category:1, tb:gtb};
+  return {category:0, tb:ranks};
+}
+function cmp(a,b){
+  if(a.category!==b.category) return a.category-b.category;
+  const n=Math.max(a.tb.length,b.tb.length);
+  for(let i=0;i<n;i++){
+    const x=a.tb[i]||0, y=b.tb[i]||0;
+    if(x!==y) return x-y;
+  }
+  return 0;
+}
+function combinations(arr,k){
+  const res=[], combo=[];
+  (function go(start){
+    if(combo.length===k){ res.push(combo.slice()); return; }
+    for(let i=start;i<arr.length;i++){ combo.push(arr[i]); go(i+1); combo.pop(); }
+  })(0);
+  return res;
+}
+// Marche pour 5, 6 ou 7 cartes (essentiel : flop/turn => 5/6 cartes).
+function bestOf(cards){
+  if(cards.length<5) return null;
+  if(cards.length===5) return evaluate5(cards);
+  let best=null;
+  for(const c of combinations(cards,5)){
+    const e=evaluate5(c);
+    if(!best || cmp(e,best)>0) best=e;
+  }
+  return best;
+}
+const HAND_NAMES=['Hauteur','Paire','Double paire','Brelan','Quinte','Couleur','Full','Carré','Quinte flush'];
+function handName(ev){
+  if(ev.category===8 && ev.tb[0]===14) return 'Quinte flush royale';
+  return HAND_NAMES[ev.category];
+}
+
+/* ----------------------- AI hand strength -------------------------- */
+function preflopStrength(c1,c2){
+  const hi=Math.max(c1.r,c2.r), lo=Math.min(c1.r,c2.r);
+  const pair=c1.r===c2.r, suited=c1.s===c2.s, gap=hi-lo;
+  let s=0;
+  if(pair){
+    s = 0.45 + (c1.r-2)/12 * 0.55;               // AA ≈ 1.0
+  } else {
+    s += (hi-2)/12 * 0.35;
+    s += (lo-2)/12 * 0.15;
+    if(suited) s+=0.10;
+    if(gap===1) s+=0.08;
+    else if(gap===2) s+=0.04;
+    else if(gap>=5) s-=0.05;
+    if(hi>=13 && lo>=10) s+=0.10;                // broadway
+    if(hi===14) s+=0.05;
+  }
+  return clamp(0.05, s, 1);
+}
+const CAT_BASE=[0.16,0.34,0.52,0.64,0.74,0.82,0.90,0.96,0.99];
+function drawBonus(cards){
+  let b=0;
+  const sc=[0,0,0,0];
+  cards.forEach(c=> sc[c.s]++);
+  if(Math.max(...sc)===4) b+=0.14;               // tirage couleur (~9 outs)
+  const rs=[...new Set(cards.map(c=>c.r))].sort((a,b)=>a-b);
+  for(let i=0;i<=rs.length-4;i++){
+    if(rs[i+3]-rs[i]===3){ b+=0.10; break; }      // tirage quinte
+  }
+  return Math.min(0.22,b);
+}
+function postflopStrength(hole, board){
+  const all=hole.concat(board);
+  const ev=bestOf(all);
+  let s=CAT_BASE[ev.category];
+  s += (ev.tb[0]||0)/14 * 0.03;                   // affine sur la hauteur
+  if(ev.category<5 && board.length<5) s += drawBonus(all);
+  return Math.min(0.999,s);
+}
+
+/* =========================== Game state =========================== */
+const AI_NAMES=['Maverick','LunaLoot','ChipMonk','BluffKing','RiverRat','GtoWizz',
+  'FoldZilla','SnapCall','TiltMaster','NitNurse','ShoveMky','AcePirate','BigSlick','DonkBuster'];
+
+// Profils d'IA. aggr=agressivité, bluff=fréquence de bluff, tight=sélectivité,
+// station=tendance à payer, shove=propension au tapis (valeur ET bluff).
+const ARCHETYPES={
+  nit:     {aggr:0.32, bluff:0.05, tight:0.80, station:0.12, shove:0.22},
+  rock:    {aggr:0.38, bluff:0.07, tight:0.70, station:0.16, shove:0.30},
+  tag:     {aggr:0.64, bluff:0.17, tight:0.56, station:0.18, shove:0.46},
+  lag:     {aggr:0.82, bluff:0.32, tight:0.36, station:0.22, shove:0.64},
+  maniac:  {aggr:0.95, bluff:0.46, tight:0.22, station:0.30, shove:0.86},
+  station: {aggr:0.40, bluff:0.10, tight:0.46, station:0.80, shove:0.24}
+};
+
+const BLINDS=[
+  {sb:10,sb2:0,bb:20,ante:0},
+  {sb:15,bb:30,ante:0},
+  {sb:20,bb:40,ante:5},
+  {sb:30,bb:60,ante:5},
+  {sb:50,bb:100,ante:10},
+  {sb:75,bb:150,ante:15},
+  {sb:100,bb:200,ante:25},
+  {sb:150,bb:300,ante:25},
+  {sb:200,bb:400,ante:50},
+  {sb:300,bb:600,ante:50},
+  {sb:400,bb:800,ante:75},
+  {sb:600,bb:1200,ante:100}
+];
+const HANDS_PER_LEVEL=4;
+const START_STACK=1500;
+const TURN_TIME=30; // s
+
+let players=[];
+let dealer=0, sbSeatG=0, bbSeatG=0;
+let community=[], deck=[];
+let pot=0, currentBet=0, minRaise=0, bigBlind=20;
+let level=0, handNumber=0, eliminatedCount=0;
+let street=0;               // 0 preflop,1 flop,2 turn,3 river
+let currentPlayer=-1;
+let revealAll=false, handOver=false, awaitingHuman=false;
+let logLines=[];
+let chipFx=[];          // jetons en mouvement (animations)
+
+/* ----------------------- Multijoueur (PeerJS) -------------------- */
+const MAX_SEATS=5;
+let netRole='solo';     // 'solo' | 'host' | 'guest'
+let peer=null;          // objet PeerJS
+let guestConns=[];      // hôte : connexions vers les invités (chacune a ._seat, ._name)
+let hostConn=null;      // invité : connexion vers l'hôte
+let myName='Joueur';
+let roomCode='';
+let awaitingRemote=null;// hôte : connexion dont on attend l'action (ou null)
+let netStarted=false;   // partie en ligne lancée
+let hbTimer=null;       // hôte : diffusion régulière de l'état
+let lobbyData=null;     // invité : dernière liste du salon reçue
+
+const isSolo =()=> netRole==='solo';
+const isHost =()=> netRole==='host';
+const isGuest=()=> netRole==='guest';
+function rotForSeat(seat, base){ return seat<0 ? -1 : (seat-base+MAX_SEATS)%MAX_SEATS; }
+function connForSeat(seat){ return guestConns.find(c=>c._seat===seat && c.open); }
+function netSafe(fn){ try{ fn(); }catch(e){ /* connexion fermée */ } }
+let soundOn=true, modalOpen=false, started=false;
+let difficulty='normal';            // 'facile' | 'normal' | 'agressif'
+const DIFF_MULT={
+  facile:  {aggr:0.78, bluff:0.50, shove:0.60},
+  normal:  {aggr:1.00, bluff:1.00, shove:1.00},
+  agressif:{aggr:1.18, bluff:1.60, shove:1.45}
+};
+
+// human turn timer
+let turnEndsAt=0, turnActive=false;
+// betslider target
+let betTarget=0;
+// flash for last action / winner highlight
+let lastActionText='';
+
+const ui = { hot:[], slider:null, sliderDrag:false, menuRect:null };
+
+/* --------------------------- Scheduler ----------------------------- */
+let pendingTimer=null, pendingFn=null, pendingSkippable=false;
+function scheduleNext(delay, fn, skippable=false){
+  clearTimeout(pendingTimer);
+  pendingFn=fn; pendingSkippable=skippable;
+  pendingTimer=setTimeout(()=>{ pendingFn=null; fn(); }, delay);
+}
+function trySkip(){
+  if(pendingFn && pendingSkippable){
+    clearTimeout(pendingTimer);
+    const fn=pendingFn; pendingFn=null; fn();
+  }
+}
+
+/* ----------------------------- Logging ----------------------------- */
+function log(msg){
+  logLines.push(msg);
+  if(logLines.length>40) logLines.shift();
+  lastActionText=msg;
+}
+
+/* --------------------- Player helpers ------------------------------ */
+const P = i => players[i];
+const inHand = p => !p.folded && !p.busted;
+const canAct = p => !p.folded && !p.busted && !p.allIn;
+function next(i){
+  let j=i;
+  do { j=(j+1)%players.length; } while(players[j].busted && j!==i);
+  return j;
+}
+function findNextToAct(from){
+  let j=from;
+  for(let k=0;k<players.length*2;k++){
+    j=(j+1)%players.length;
+    const p=players[j];
+    if(canAct(p) && (!p.hasActed || p.bet!==currentBet)) return j;
+  }
+  return -1;
+}
+
+/* --------------------- Betting primitives -------------------------- */
+function commit(p, amt){
+  amt=Math.min(amt, p.stack);
+  p.stack-=amt; p.bet+=amt; p.totalBet+=amt; pot+=amt;
+  if(p.stack<=0){ p.stack=0; p.allIn=true; }
+  return amt;
+}
+function postAnte(p, amt){
+  amt=Math.min(amt, p.stack);
+  p.stack-=amt; p.totalBet+=amt; pot+=amt;     // argent mort : pas dans p.bet
+  if(p.stack<=0){ p.stack=0; p.allIn=true; }
+}
+
+/* ====================== Tournament / hand flow ==================== */
+function makeAI(idx, name){
+  const arche = AI_POOL.length ? AI_POOL.shift() : 'tag';
+  const b=ARCHETYPES[arche];
+  const jit=v=> clamp(0.02, v+(Math.random()-0.5)*0.10, 0.98);
+  const m=DIFF_MULT[difficulty]||DIFF_MULT.normal;
+  return {
+    name, isHuman:false, idx, archetype:arche,
+    personality:{
+      aggr:jit(b.aggr*m.aggr), bluff:jit(b.bluff*m.bluff), tight:jit(b.tight),
+      station:jit(b.station), shove:jit(b.shove*m.shove)
+    }
+  };
+}
+let AI_POOL=[];
+function refillAIPool(){
+  AI_POOL=Object.keys(ARCHETYPES).sort(()=>Math.random()-0.5);
+  if(!AI_POOL.some(a=>a==='maniac'||a==='lag')) AI_POOL[0]='lag';
+}
+function buildRoster(){
+  players=[];
+  refillAIPool();
+  const names=[...AI_NAMES].sort(()=>Math.random()-0.5);
+  if(isHost()){
+    players.push({ name:(myName||'Hôte'), isHuman:true, idx:0, local:true, conn:null });
+    for(let i=1;i<MAX_SEATS;i++){
+      const c=connForSeat(i);
+      if(c) players.push({ name:c._name||('Joueur '+i), isHuman:true, idx:i, local:false, conn:c });
+      else  players.push(makeAI(i, names.pop()));
+    }
+  } else { // solo
+    players.push({ name:'Vous', isHuman:true, idx:0, local:true });
+    for(let i=1;i<MAX_SEATS;i++) players.push(makeAI(i, names.pop()));
+  }
+  players.forEach(p=>{
+    p.stack=START_STACK; p.cards=[]; p.bet=0; p.totalBet=0;
+    p.folded=false; p.allIn=false; p.busted=false; p.hasActed=false;
+    p.place=null; p.lastWin=0; p.bustedAt=null;
+  });
+}
+function initTournament(){
+  buildRoster();
+  dealer=Math.floor(Math.random()*players.length);
+  handNumber=0; eliminatedCount=0; level=0; logLines=[]; chipFx=[];
+  const humans = players.filter(p=>p.isHuman).length;
+  log('Tournoi Sit & Go — '+MAX_SEATS+' joueurs'+(isHost()?(' ('+humans+' humain'+(humans>1?'s':'')+', '+(MAX_SEATS-humans)+' IA)'):'')+'.');
+  if(isHost()) startHeartbeat();
+  scheduleNext(500, startHand);
+}
+
+function startHand(){
+  handNumber++;
+  level = Math.min(Math.floor((handNumber-1)/HANDS_PER_LEVEL), BLINDS.length-1);
+  const bl = BLINDS[level];
+  bigBlind = bl.bb;
+
+  deck = shuffle(buildDeck());
+  community=[]; pot=0; currentBet=0; minRaise=bl.bb;
+  chipFx=[];
+  street=0; revealAll=false; handOver=false; awaitingHuman=false;
+
+  players.forEach(p=>{
+    p.bet=0; p.totalBet=0; p.folded=false; p.allIn=false; p.hasActed=false;
+    p.cards=[]; p.lastWin=0;
+    if(!p.busted) p.stackAtHand=p.stack;
+  });
+
+  dealer = next(dealer);
+  const aliveSeats = players.map((p,i)=>i).filter(i=>!players[i].busted);
+  const heads = aliveSeats.length===2;
+  let sbSeat, bbSeat;
+  if(heads){ sbSeat=dealer; bbSeat=next(dealer); }
+  else { sbSeat=next(dealer); bbSeat=next(sbSeat); }
+  sbSeatG=sbSeat; bbSeatG=bbSeat;
+
+  // antes
+  if(bl.ante>0) players.forEach(p=>{ if(!p.busted) postAnte(p, bl.ante); });
+  // blindes
+  commit(players[sbSeat], bl.sb);
+  commit(players[bbSeat], bl.bb);
+  players[sbSeat].hasActed=false;
+  players[bbSeat].hasActed=false;
+  currentBet=bl.bb;
+  minRaise=bl.bb;
+
+  log('— Main #'+handNumber+' · Blindes '+bl.sb+'/'+bl.bb+(bl.ante?(' (ante '+bl.ante+')'):'')+' —');
+
+  // distribution (2 cartes chacun)
+  for(let r=0;r<2;r++) players.forEach(p=>{ if(!p.busted) p.cards.push(deck.pop()); });
+  sfx('deal');
+
+  // 1er à parler préflop : findNextToAct partira de bbSeat dans les deux cas
+  currentPlayer = bbSeat;
+  scheduleNext(800, gameStep);
+}
+
+function gameStep(){
+  if(isGuest()) return;            // l'invité ne fait pas tourner le moteur
+  if(handOver) return;
+  const contested = players.filter(inHand);
+  if(contested.length===1){ endHandFold(contested[0]); return; }
+
+  if(bettingDone()){
+    if(street>=3) doShowdown();
+    else goNextStreet();
+    return;
+  }
+  currentPlayer = findNextToAct(currentPlayer);
+  if(currentPlayer<0){
+    if(street>=3) doShowdown(); else goNextStreet();
+    return;
+  }
+  const p=players[currentPlayer];
+  if(p.isHuman){
+    turnActive=true;
+    turnEndsAt = performance.now() + TURN_TIME*1000;
+    if(p.local){ awaitingHuman=true; awaitingRemote=null; beginHumanTurn(); }
+    else { awaitingHuman=false; awaitingRemote = p.conn || null; }   // on attend l'invité
+    netPush();                     // pour que le joueur concerné voie ses boutons
+  } else {
+    awaitingHuman=false; awaitingRemote=null; turnActive=false;
+    netPush();
+    const delay=650+Math.random()*1000;
+    scheduleNext(delay, ()=>{
+      applyAction(p, aiDecide(p));
+      gameStep();
+    });
+  }
+}
+
+function bettingDone(){
+  const actors=players.filter(canAct);
+  const contested=players.filter(inHand);
+  if(contested.length<=1) return true;
+  if(actors.length===0) return true;
+  for(const p of actors){
+    if(!p.hasActed) return false;
+    if(p.bet!==currentBet) return false;
+  }
+  return true;
+}
+
+function goNextStreet(){
+  collectBetsAnim();                            // jetons des mises -> pot
+  if(isHost()) netFx('collect');
+  players.forEach(p=>{ p.bet=0; p.hasActed=false; });
+  currentBet=0; minRaise=bigBlind;
+  street++;
+  if(street===1){ community.push(deck.pop(),deck.pop(),deck.pop()); log('Flop distribué.'); }
+  else if(street===2){ community.push(deck.pop()); log('Turn distribué.'); }
+  else if(street===3){ community.push(deck.pop()); log('River distribuée.'); }
+  sfx('deal');
+  if(isHost()) netPush();
+
+  const heads = players.filter(p=>!p.busted).length===2;
+  currentPlayer = heads ? sbSeatG : dealer;   // findNextToAct => 1er postflop
+
+  const actors=players.filter(canAct);
+  if(actors.length<=1 && players.filter(inHand).length>1){
+    revealAll=true;                            // tapis : on dévoile les mains
+    if(isHost()) netPush();
+    scheduleNext(950, ()=>{
+      if(street>=3) doShowdown(); else goNextStreet();
+    }, true);
+    return;
+  }
+  scheduleNext(450, gameStep);
+}
+
+function doShowdown(){
+  revealAll=true;
+  collectBetsAnim();                            // mises de la river -> pot
+  if(isHost()) netFx('collect');
+  players.forEach(p=>p.bet=0);
+  handOver=true; turnActive=false;
+  if(isHost()) netPush();
+  scheduleNext(380, ()=>{                        // puis on attribue le pot
+    const pots=buildPots();
+    awardPots(pots);
+    const winSeats=players.filter(p=>p.lastWin>0).map(p=>p.idx);
+    winSeats.forEach(s=>spawnAwardAnim(s, 0));   // pot -> gagnant(s)
+    if(isHost()){ netFx('award', winSeats); netPush(); }
+    scheduleNext(2600, nextHandOrEnd, true);
+  }, true);
+}
+
+function endHandFold(winner){
+  collectBetsAnim();
+  if(isHost()) netFx('collect');
+  players.forEach(p=>p.bet=0);
+  handOver=true; revealAll=false; turnActive=false;
+  if(isHost()) netPush();
+  scheduleNext(300, ()=>{
+    winner.stack+=pot; winner.lastWin=pot;
+    log(winner.name+' remporte '+fmt(pot)+' (adversaires couchés).');
+    spawnAwardAnim(winner.idx, 0); sfx('win');
+    if(isHost()){ netFx('award', [winner.idx]); }
+    pot=0;
+    if(isHost()) netPush();
+    scheduleNext(1500, nextHandOrEnd, true);
+  }, true);
+}
+
+function buildPots(){
+  const contribLevels=[...new Set(players.filter(p=>p.totalBet>0).map(p=>p.totalBet))]
+    .sort((a,b)=>a-b);
+  const pots=[]; let prev=0;
+  for(const lvl of contribLevels){
+    const layer=lvl-prev;
+    let amount=0; const eligible=[];
+    players.forEach(p=>{
+      if(p.totalBet>=lvl) amount+=layer;
+      else if(p.totalBet>prev) amount+=(p.totalBet-prev);
+      if(p.totalBet>=lvl && inHand(p)) eligible.push(p);
+    });
+    if(amount>0) pots.push({amount, eligible});
+    prev=lvl;
+  }
+  return pots;
+}
+
+function awardPots(pots){
+  const evals={};
+  players.forEach(p=>{ if(inHand(p)) evals[p.idx]=bestOf(p.cards.concat(community)); });
+  pot=0;
+  pots.forEach((pp,idx)=>{
+    if(pp.eligible.length===0) return;
+    let best=null, winners=[];
+    pp.eligible.forEach(p=>{
+      const e=evals[p.idx];
+      if(best===null || cmp(e,best)>0){ best=e; winners=[p]; }
+      else if(cmp(e,best)===0) winners.push(p);
+    });
+    const share=Math.floor(pp.amount/winners.length);
+    const rem=pp.amount - share*winners.length;
+    winners.forEach((w,i)=>{
+      const amt=share + (i<rem?1:0);
+      w.stack+=amt; w.lastWin=(w.lastWin||0)+amt;
+    });
+    const names=winners.map(w=>w.name).join(', ');
+    const label = pots.length>1 ? (idx===0?'pot principal':'pot annexe '+idx) : 'pot';
+    log(names+' gagne le '+label+' ('+fmt(pp.amount)+') · '+handName(best)+'.');
+  });
+  sfx('win');
+}
+
+function nextHandOrEnd(){
+  const newlyBusted = players.filter(p=>!p.busted && p.stack<=0)
+                             .sort((a,b)=> (a.stackAtHand||0)-(b.stackAtHand||0));
+  newlyBusted.forEach(p=>{
+    p.busted=true; p.bustedAt=performance.now(); eliminatedCount++;
+    p.place = players.length - eliminatedCount + 1;
+    log(p.name+' est éliminé ('+ordinal(p.place)+').');
+  });
+
+  const alive=players.filter(p=>!p.busted);
+  if(alive.length===1){
+    alive[0].place=1;
+    if(isHost()){ netPush(); netBroadcast({t:'over', name:alive[0].name, youWon:false}); stopHeartbeat(); }
+    if(alive[0].local) showVictory();
+    else showDefeat(players[0].place || 2);
+    return;
+  }
+  if(isHost()) netPush();
+  if(players[0].busted){
+    if(isSolo()){ showEliminated(players[0].place); return; }
+    // hôte éliminé : la partie continue (il devient spectateur)
+  }
+  scheduleNext(700, startHand);
+}
+
+/* ============================ AI brain ============================ */
+// Monte-Carlo : équité de la main de p contre nOpp adversaires aléatoires.
+function mcEquity(hole, board, nOpp, samples){
+  nOpp=Math.max(1,Math.min(nOpp,4));
+  const used=new Set();
+  const add=c=> used.add(c.s*13+(c.r-2));
+  hole.forEach(add); board.forEach(add);
+  const rem=[];
+  for(let s=0;s<4;s++) for(let r=2;r<=14;r++){ if(!used.has(s*13+(r-2))) rem.push({r,s}); }
+  const needBoard=5-board.length;
+  let win=0, tie=0;
+  for(let i=0;i<samples;i++){
+    const need=nOpp*2+needBoard;
+    for(let d=0; d<need; d++){               // tirage partiel sans remise
+      const j=d+Math.floor(Math.random()*(rem.length-d));
+      const t=rem[d]; rem[d]=rem[j]; rem[j]=t;
+    }
+    const fb = needBoard ? board.concat(rem.slice(0,needBoard)) : board;
+    const heroEv=bestOf(hole.concat(fb));
+    let beaten=false, tied=false, idx=needBoard;
+    for(let o=0;o<nOpp;o++){
+      const oe=bestOf([rem[idx],rem[idx+1]].concat(fb)); idx+=2;
+      const c=cmp(oe,heroEv);
+      if(c>0){ beaten=true; break; }
+      else if(c===0) tied=true;
+    }
+    if(beaten) continue;
+    if(tied) tie++; else win++;
+  }
+  return (win+tie*0.5)/samples;
+}
+
+// Nombre de joueurs encore à parler après p ce tour (proxy de position).
+function playersToActAfter(p){
+  let count=0, j=p.idx;
+  for(let k=0;k<players.length;k++){
+    j=(j+1)%players.length;
+    if(j===p.idx) break;
+    const q=players[j];
+    if(canAct(q) && (!q.hasActed || q.bet!==currentBet)) count++;
+  }
+  return count;
+}
+// Tailles de mise / relance, bornées au tapis et au minimum légal.
+function sizeBet(p, frac){
+  let amt=Math.max(Math.round(pot*frac), bigBlind);
+  let to=p.bet+Math.min(amt, p.stack);
+  const minTo=Math.min(currentBet+minRaise, p.bet+p.stack);
+  return Math.round(clamp(minTo, to, p.bet+p.stack));
+}
+function sizeRaisePot(p, frac){
+  let to=currentBet+Math.round(pot*frac);
+  const minTo=Math.min(currentBet+minRaise, p.bet+p.stack);
+  return Math.round(clamp(minTo, Math.max(to,minTo), p.bet+p.stack));
+}
+
+function aiDecide(p){
+  const per=p.personality;
+  const board=community;
+  const street0=board.length===0;
+  const toCall=Math.max(0, currentBet-p.bet);
+  const callable=Math.min(toCall, p.stack);
+  const allInTotal=p.bet+p.stack;
+  const minRaiseTotal=Math.min(currentBet+minRaise, allInTotal);
+  const canFullRaise=allInTotal>currentBet+0.5;
+  const potOdds=(pot+callable)>0 ? callable/(pot+callable) : 0;
+  const bbStack=p.stack/Math.max(1,bigBlind);
+  const nOpp=Math.max(1, players.filter(q=>q!==p && inHand(q)).length);
+  const facingBet=toCall>0;
+  const behind=playersToActAfter(p);
+  const stealy=behind<=1;                         // position tardive ~
+  const committed=p.totalBet/(p.totalBet+p.stack+1e-6);
+  const spr=p.stack/Math.max(1,pot);              // stack-to-pot ratio
+
+  // Équité réelle par Monte-Carlo (calcul, pas une simple heuristique).
+  const samples = street0?160 : (nOpp>=3?140:220);
+  let eq=clamp(0, mcEquity(p.cards, board, nOpp, samples)+(Math.random()-0.5)*0.05, 1);
+
+  // Main faite + tirages (postflop) pour repérer la valeur et le semi-bluff.
+  let madeCat=-1, draws=0;
+  if(!street0){
+    const ev=bestOf(p.cards.concat(board));
+    madeCat=ev.category;
+    draws=drawBonus(p.cards.concat(board));       // 0..0.22
+  }
+  const pf = street0 ? preflopStrength(p.cards[0],p.cards[1]) : 0;
+  const drawy = draws>0.05;
+
+  // Seuils d'équité (tiennent compte du nombre d'adversaires restants).
+  const strongEq = 0.62 + (nOpp-1)*0.045;         // nettement devant
+  const goodEq   = 0.50 + (nOpp-1)*0.030;
+
+  /* ============ PRÉFLOP : tapis / fold quand le tapis est court ============ */
+  if(street0){
+    const pushCeil = 9 + per.shove*9;             // ~9..18 BB selon l'archétype
+    if(bbStack <= pushCeil){
+      // On ne peut que suivre tapis ou se coucher : décision aux cotes.
+      if(facingBet && callable >= p.stack*0.92){
+        let need = potOdds*(1-per.station*0.18) + (per.tight-0.5)*0.05;
+        return (eq>=need || pf>=0.80) ? {action:'call'} : {action:'fold'};
+      }
+      // Sinon : on peut faire tapis (open ou sur-relance) — valeur OU bluff.
+      // Seuils dépendant de la difficulté : Facile = plus prudent, Agressif = plus large.
+      const vsPf = difficulty==='facile'?0.60 : difficulty==='agressif'?0.47 : 0.52;
+      const vsEq = difficulty==='facile'?0.63 : difficulty==='agressif'?0.55 : 0.58;
+      const plBar= difficulty==='facile'?0.34 : difficulty==='agressif'?0.24 : 0.28;
+      const valueShove = pf>=vsPf || eq>=vsEq;                       // bonne main
+      const playable   = pf>=plBar;                                  // jouable
+      let bluffP = per.shove*(stealy?1.0:0.5)*(facingBet?0.4:1);
+      const bluffShove = playable && Math.random()<bluffP;
+      const airShove   = !playable && stealy && Math.random()<bluffP*0.45;
+      if(valueShove || bluffShove || airShove)
+        return canFullRaise ? {action:'raise', to:allInTotal} : {action:'call'};
+      if(facingBet && eq>=potOdds*1.05) return {action:'call'};
+      if(!facingBet) return {action:'check'};
+      return {action:'fold'};
+    }
+    // Tapis profond : ouverture / 3-bet / suivi.
+    const justBlinds = currentBet <= bigBlind*1.05;   // personne n'a vraiment relancé
+    if(facingBet && justBlinds){
+      const openBar = 0.42 + per.tight*0.16 - (stealy?0.10:0) - per.aggr*0.04;
+      if(pf>=openBar || (stealy && pf>=openBar-0.08)){
+        if(pf<openBar+0.12 && Math.random()<0.18) return {action:'call'}; // limp piège
+        const sizeBB = 2.1 + per.aggr*0.9 + Math.random()*0.4;
+        let to=clamp(minRaiseTotal, Math.round(bigBlind*sizeBB), allInTotal);
+        return {action:'raise', to};
+      }
+      if(eq>=potOdds*1.1 && pf>=0.30 && Math.random()<0.5) return {action:'call'};
+      if(callable<=bigBlind*0.6 && pf>=0.25 && Math.random()<0.5) return {action:'call'};
+      return {action:'fold'};
+    }
+    // Face à une VRAIE relance préflop : 3-bet tapis (valeur) ou squeeze-bluff.
+    if(facingBet && !justBlinds && bbStack<=34 && canFullRaise){
+      if(pf>=0.62 && Math.random()<0.72) return {action:'raise', to:allInTotal}; // valeur
+      if(per.shove>0.5 && (pf>=0.30 || stealy) && Math.random()<per.shove*0.30)
+        return {action:'raise', to:allInTotal};                                  // bluff
+    }
+    // (Sinon, logique générale ci-dessous.)
+  }
+
+  /* ================ PAS DE MISE À SUIVRE : check ou mise ================ */
+  if(!facingBet){
+    // Valeur : grosse main faite -> mise forte, voire tapis si SPR bas / court.
+    if(eq>=strongEq || madeCat>=2){
+      const nutty = madeCat>=4;                                 // quinte ou mieux
+      const wantJam = eq>=strongEq && (spr<=2.2 || bbStack<=24);
+      if((wantJam || (nutty && Math.random()<0.7)) && canFullRaise && Math.random()<0.82)
+        return {action:'raise', to:allInTotal};                 // tapis de valeur
+      return {action:'raise', to:sizeBet(p, 0.55+per.aggr*0.25)};
+    }
+    // Semi-bluff avec tirage (équité + fold equity).
+    if(drawy && Math.random() < 0.42+per.aggr*0.4){
+      if(spr<=1.8 && canFullRaise && Math.random()<per.shove*0.7)
+        return {action:'raise', to:allInTotal};                 // tapis semi-bluff
+      return {action:'raise', to:sizeBet(p, 0.5+per.aggr*0.2)};
+    }
+    // Bluff pur (air) — surtout en short-handed, fréquence selon l'archétype.
+    if(nOpp<=2 && eq<goodEq && Math.random() < per.bluff*(stealy?1.1:0.65)){
+      if(bbStack<=18 && canFullRaise && Math.random()<per.shove*0.55)
+        return {action:'raise', to:allInTotal};                 // tapis de bluff
+      return {action:'raise', to:sizeBet(p, 0.5+per.aggr*0.3)};
+    }
+    // Tapis POLARISÉ des joueurs agressifs : soit une main piège, soit un bluff total.
+    if(per.shove>0.5 && nOpp<=2 && bbStack<=42 && canFullRaise &&
+       Math.random() < per.shove*0.14)
+      return {action:'raise', to:allInTotal};
+    return {action:'check'};
+  }
+
+  /* ================== FACE À UNE MISE / RELANCE / TAPIS ================== */
+  // Engagé dans le pot -> on ne se couche pas avec une équité correcte.
+  if(committed>=0.42 && eq>=potOdds*0.85){
+    if(eq>=strongEq && canFullRaise) return {action:'raise', to:allInTotal};
+    return {action:'call'};
+  }
+  // Valeur : relance / tapis (tapis si court ou SPR bas).
+  if(eq>=strongEq){
+    if(canFullRaise){
+      if(bbStack<=26 || spr<=2.4 || Math.random()<0.30+per.aggr*0.4)
+        return {action:'raise', to:allInTotal};
+      return {action:'raise', to:sizeRaisePot(p, 0.9)};
+    }
+    return {action:'call'};
+  }
+  // Semi-bluff avec tirage + fold equity (peut partir tapis).
+  if(drawy && canFullRaise && eq>=potOdds && Math.random()<(per.bluff*0.6+per.aggr*0.3)){
+    if(spr<=1.8 && Math.random()<per.shove*0.7) return {action:'raise', to:allInTotal};
+    return {action:'raise', to:sizeRaisePot(p, 0.8)};
+  }
+  // Suivi aux cotes (+ cotes implicites pour les tirages, + calling station).
+  let need = potOdds*(1-per.station*0.20);
+  if(drawy) need*=0.82;
+  need += (per.tight-0.5)*0.06;
+  if(eq>=need) return {action:'call'};
+  // Bluff-relance pur, parfois, en heads-up face à une petite mise.
+  const betFrac = toCall/Math.max(1,pot);
+  if(nOpp===1 && canFullRaise && betFrac<0.6 && Math.random()<per.bluff*0.5){
+    if(bbStack<=16 && Math.random()<per.shove*0.6) return {action:'raise', to:allInTotal};
+    return {action:'raise', to:sizeRaisePot(p, 0.85)};
+  }
+  if(callable<=p.stack*0.06 && eq>=0.20 && Math.random()<0.3) return {action:'call'}; // float
+  return {action:'fold'};
+}
+
+/* ======================== Apply an action ======================== */
+function applyAction(p, d){
+  if(d.action==='fold'){
+    p.folded=true; log(p.name+' se couche.'); sfx('fold');
+  } else if(d.action==='check'){
+    log(p.name+' parole.'); sfx('check');
+  } else if(d.action==='call'){
+    const amt=Math.min(currentBet-p.bet, p.stack);
+    commit(p, amt);
+    log(p.name + (p.allIn ? ' suit tapis ('+fmt(amt)+').' : ' suit '+fmt(amt)+'.'));
+    sfx('chip');
+  } else if(d.action==='raise'){
+    const prev=currentBet;
+    const target=clamp(p.bet+1, d.to, p.bet+p.stack);
+    const addAmt=target-p.bet;
+    commit(p, addAmt);
+    const raiseSize=p.bet-prev;
+    currentBet=Math.max(currentBet, p.bet);
+    if(raiseSize>=minRaise){
+      minRaise=raiseSize;
+      players.forEach(o=>{ if(o!==p && canAct(o)) o.hasActed=false; });
+    }
+    if(prev===0) log(p.name + (p.allIn?' mise tapis ':' mise ')+fmt(p.bet)+'.');
+    else log(p.name + (p.allIn?' relance tapis à ':' relance à ')+fmt(p.bet)+'.');
+    sfx('chip');
+  }
+  p.hasActed=true;
+  if(isHost()) netPush();
+}
+
+/* ======================= Human interaction ======================= */
+function beginHumanTurn(){
+  const me=players[0]||{bet:0,stack:0};
+  betTarget = Math.min(currentBet+minRaise, me.bet+me.stack);
+  turnActive=true;
+  turnEndsAt = performance.now() + TURN_TIME*1000;
+}
+function endHumanTurn(){ turnActive=false; awaitingHuman=false; }
+
+// Applique une action pour un siège donné (hôte/solo : moteur local).
+function commitHumanAction(seat, type, raiseTo){
+  const p=players[seat];
+  if(!p) return;
+  awaitingHuman=false; awaitingRemote=null; turnActive=false;
+  let d;
+  if(type==='fold') d={action:'fold'};
+  else if(type==='check') d={action:(currentBet-p.bet===0?'check':'call')};
+  else if(type==='call') d={action:'call'};
+  else d={action:'raise', to:raiseTo};
+  applyAction(p, d);
+  gameStep();
+}
+
+// Bouton local : solo/hôte agit pour son siège (0) ; invité envoie à l'hôte.
+function humanAction(type, raiseTo){
+  if(!awaitingHuman) return;
+  if(isGuest()){
+    if(hostConn && hostConn.open) netSafe(()=>hostConn.send({t:'action', action:type, to:raiseTo}));
+    awaitingHuman=false; turnActive=false;     // on masque les boutons en attendant l'hôte
+    return;
+  }
+  commitHumanAction(0, type, raiseTo);          // solo ou hôte : siège 0 = moi
+}
+
+/* ============================== Audio ============================= */
+let actx=null, masterGain=null, noiseBuf=null;
+function initAudio(){
+  if(actx) return;
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    masterGain=actx.createGain(); masterGain.gain.value=0.18;
+    masterGain.connect(actx.destination);
+    const n=actx.sampleRate*0.4; noiseBuf=actx.createBuffer(1,n,actx.sampleRate);
+    const ch=noiseBuf.getChannelData(0);
+    for(let i=0;i<n;i++) ch[i]=Math.random()*2-1;
+  }catch(e){ actx=null; }
+}
+function tone(freq,dur,type='sine',vol=1,slideTo){
+  if(!actx||!soundOn) return;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,actx.currentTime);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,actx.currentTime+dur);
+  g.gain.setValueAtTime(0.0001,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(vol,actx.currentTime+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+dur);
+  o.connect(g); g.connect(masterGain); o.start(); o.stop(actx.currentTime+dur+0.02);
+}
+function noise(dur,vol=1,hp=600){
+  if(!actx||!soundOn||!noiseBuf) return;
+  const s=actx.createBufferSource(); s.buffer=noiseBuf;
+  const f=actx.createBiquadFilter(); f.type='highpass'; f.frequency.value=hp;
+  const g=actx.createGain();
+  g.gain.setValueAtTime(vol,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+dur);
+  s.connect(f); f.connect(g); g.connect(masterGain); s.start(); s.stop(actx.currentTime+dur+0.02);
+}
+function sfx(kind){
+  if(!actx||!soundOn) return;
+  if(kind==='chip'){ noise(0.07,0.9,1400); tone(220,0.05,'square',0.25); }
+  else if(kind==='check'){ tone(330,0.07,'sine',0.5); }
+  else if(kind==='fold'){ noise(0.12,0.5,300); }
+  else if(kind==='deal'){ noise(0.05,0.6,2000); }
+  else if(kind==='win'){ tone(523,0.10,'sine',0.6); setTimeout(()=>tone(659,0.10,'sine',0.6),90);
+    setTimeout(()=>tone(784,0.16,'sine',0.6),180); }
+  else if(kind==='btn'){ tone(440,0.04,'sine',0.4); }
+}
+
+/* ============================== Layout =========================== */
+const SEAT_FX=[0.50,0.115,0.315,0.685,0.885];
+const SEAT_FY=[0.00,0.455,0.205,0.205,0.455];
+// Angles (deg) pour disposer les IA sur l'ellipse en portrait.
+// Repère écran : 0=droite, 90=bas, 180=gauche, 270=haut.
+const SEAT_ANG=[90, 205, 250, 290, 335]; // 0=humain(bas) ; G-milieu, haut-G, haut-D, D-milieu
+
+function L(){
+  const W=cssW,H=cssH;
+  const portrait = H/W >= 1.6;          // téléphone en mode portrait
+  const headerH=clamp(40,H*0.075,56);
+  const ctrlH=clamp(120, H*(portrait?0.205:0.255), portrait?190:168);
+  const ctrlTop=H-ctrlH;
+  const fieldTop=headerH, fieldBot=ctrlTop;
+  const playH=fieldBot-fieldTop;
+  const cx=W/2, cy=(fieldTop+fieldBot)/2;
+
+  const podW=clamp(86, W*(portrait?0.225:0.152), 168);
+  const podH=clamp(40, H*(portrait?0.052:0.082), 60);
+
+  const commCardW=clamp(portrait?40:33, W*(portrait?0.082:0.057), portrait?52:60);
+  const commCardH=commCardW*1.4;
+  const commGap=commCardW*0.16;
+
+  const humanCardW=clamp(portrait?56:46, W*(portrait?0.135:0.084), portrait?92:86);
+  const humanCardH=humanCardW*1.4;
+  const humanPodCY=ctrlTop - podH*0.55 - (portrait?12:6);
+  const humanCardsCY=humanPodCY - podH*0.5 - humanCardH*0.45;
+
+  let tableCX=cx, tableCY=cy, tableW, tableH, commCY;
+  const seats=[];
+
+  if(portrait){
+    // Ovale qui épouse l'espace, du header jusqu'au pod du joueur.
+    const tabTop = fieldTop + 6;
+    const tabBot = humanPodCY + podH*0.10;
+    tableCX = cx;
+    tableCY = (tabTop+tabBot)/2;
+    tableH  = tabBot - tabTop;
+    tableW  = Math.min(W*0.96, tableH*0.92);
+    // Cartes communes plus basses : réduit le vide sous le board.
+    commCY = fieldTop + playH*0.585;
+    // IA réparties sur l'arc supérieur de l'ellipse, au-dessus du board.
+    const rx = tableW/2*0.90, ry = tableH/2*0.86;
+    for(let i=0;i<players.length;i++){
+      if(i===0){ seats.push({x:cx, y:humanPodCY}); continue; }
+      const a = SEAT_ANG[i]*Math.PI/180;
+      let x = tableCX + Math.cos(a)*rx;
+      let y = tableCY + Math.sin(a)*ry;
+      x=clamp(podW/2+4, x, W-podW/2-4);
+      y=clamp(headerH+podH/2+6, y, commCY-podH*0.5-commCardH*0.5-6);
+      seats.push({x,y});
+    }
+  } else {
+    tableW=Math.min(W*0.94, playH*2.05);
+    tableH=playH*0.94;
+    commCY = cy + commCardH*0.04;
+    for(let i=0;i<players.length;i++){
+      if(i===0){ seats.push({x:cx, y:humanPodCY}); continue; }
+      let x=W*SEAT_FX[i];
+      let y=fieldTop + SEAT_FY[i]*playH;
+      x=clamp(podW/2+6, x, W-podW/2-6);
+      y=clamp(headerH+podH/2+8, y, fieldBot-podH/2-4);
+      seats.push({x,y});
+    }
+  }
+
+  return {W,H,portrait,headerH,ctrlH,ctrlTop,cx,cy,tableCX,tableCY,tableW,tableH,
+    podW,podH,commCardW,commCardH,commGap,commCY,
+    humanCardW,humanCardH,humanPodCY,humanCardsCY,seats};
+}
+
+/* ============================ Rendering ========================== */
+function drawTable(g){
+  const cx=g.tableCX, cy=g.tableCY, w=g.tableW, h=g.tableH;
+  const x=cx-w/2, y=cy-h/2, r=h/2;
+  // rail
+  ctx.save();
+  roundRect(ctx,x-14,y-14,w+28,h+28,r+14);
+  const rail=ctx.createLinearGradient(0,y-14,0,y+h+14);
+  rail.addColorStop(0,'#4d525b'); rail.addColorStop(0.5,'#2c3037'); rail.addColorStop(1,'#191c21');
+  ctx.fillStyle=rail; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.stroke();
+  // felt
+  roundRect(ctx,x,y,w,h,r);
+  const felt=ctx.createRadialGradient(cx,cy-h*0.15,h*0.15,cx,cy,w*0.62);
+  felt.addColorStop(0,'#379a59'); felt.addColorStop(0.62,'#23793f'); felt.addColorStop(1,'#155029');
+  ctx.fillStyle=felt; ctx.fill();
+  ctx.lineWidth=clamp(3,h*0.018,7); ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.stroke();
+  // inner hairline
+  roundRect(ctx,x+10,y+10,w-20,h-20,r-10);
+  ctx.lineWidth=1.5; ctx.strokeStyle='rgba(0,0,0,.25)'; ctx.stroke();
+  // watermark (marque générique, pas de logo réel)
+  ctx.fillStyle='rgba(255,255,255,.055)';
+  ctx.font='800 '+Math.round(h*0.16)+'px Segoe UI, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText("♠  HOLD'EM  ♠", cx, cy+h*0.215);
+  ctx.restore();
+}
+
+function drawCard(x,y,w,h,card,faceUp){
+  ctx.save();
+  if(!faceUp){
+    roundRect(ctx,x,y,w,h,Math.max(4,w*0.14));
+    const bg=ctx.createLinearGradient(x,y,x,y+h);
+    bg.addColorStop(0,'#b3202e'); bg.addColorStop(1,'#7c1420');
+    ctx.fillStyle=bg; ctx.fill();
+    ctx.lineWidth=Math.max(1,w*0.04); ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.stroke();
+    roundRect(ctx,x+w*0.12,y+h*0.10,w*0.76,h*0.80,Math.max(2,w*0.08));
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.32)';
+    const dot=Math.max(1.1,w*0.05);
+    for(let r=0;r<3;r++) for(let c=0;c<2;c++){
+      ctx.beginPath();
+      ctx.arc(x+w*(0.33+c*0.34), y+h*(0.30+r*0.20), dot, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore(); return;
+  }
+  roundRect(ctx,x,y,w,h,Math.max(4,w*0.14));
+  ctx.fillStyle='#fbfbfb'; ctx.fill();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.stroke();
+  const s=SUITS[card.s];
+  ctx.fillStyle=s.col;
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  const rs=Math.round(w*0.40);
+  ctx.font='800 '+rs+'px Segoe UI, sans-serif';
+  ctx.fillText(rankName(card.r), x+w*0.10, y+h*0.06);
+  ctx.font='700 '+Math.round(w*0.30)+'px Segoe UI, sans-serif';
+  ctx.fillText(s.sym, x+w*0.10, y+h*0.06+rs*0.95);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='700 '+Math.round(w*0.56)+'px Segoe UI, sans-serif';
+  ctx.globalAlpha=0.92;
+  ctx.fillText(s.sym, x+w*0.60, y+h*0.62);
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+const BUST_FADE = 550;   // ms — durée de l'animation de disparition
+function playerAlpha(p){
+  if(!p.busted) return 1;
+  if(p.bustedAt==null) return 0;                 // éliminé depuis longtemps : invisible
+  const t=(performance.now()-p.bustedAt)/BUST_FADE;
+  return t>=1 ? 0 : 1-t;
+}
+
+function drawPod(g, p, pos){
+  // Joueur éliminé : fondu + léger rétrécissement, puis plus rien (aucun pod gris).
+  const fa = p.busted ? playerAlpha(p) : 1;
+  if(p.busted && fa<=0) return;
+
+  const w=g.podW, h=g.podH;
+  ctx.save();
+  if(p.busted){
+    const s=0.80+0.20*fa;                        // rétrécit en disparaissant
+    ctx.globalAlpha=fa;
+    ctx.translate(pos.x, pos.y-(1-fa)*12);       // glisse légèrement vers le haut
+    ctx.scale(s,s);
+    ctx.translate(-pos.x, -pos.y);
+  }
+
+  const x=pos.x-w/2, y=pos.y-h/2;
+  const active = (currentPlayer===p.idx) && !handOver && inHand(p);
+  const winner = handOver && p.lastWin>0;
+  if(active){ ctx.shadowColor='rgba(126,224,138,.85)'; ctx.shadowBlur=18; }
+  else if(winner){ ctx.shadowColor='rgba(255,213,74,.8)'; ctx.shadowBlur=16; }
+  roundRect(ctx,x,y,w,h,h*0.34);
+  const bg=ctx.createLinearGradient(0,y,0,y+h);
+  bg.addColorStop(0,'#323842'); bg.addColorStop(1,'#161a20');
+  ctx.fillStyle=bg; ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.lineWidth=1.5;
+  ctx.strokeStyle = active?'rgba(126,224,138,.9)' : winner?'rgba(255,213,74,.9)' : 'rgba(255,255,255,.10)';
+  ctx.stroke();
+
+  const nameY=y+h*0.30, stackY=y+h*0.71;
+  ctx.textAlign='center';
+  ctx.fillStyle=p.folded?'#8a909a':'#eef1f4'; ctx.textBaseline='middle';
+  ctx.font='700 '+Math.round(h*0.30)+'px Segoe UI, sans-serif';
+  ctx.fillText(p.name, pos.x, nameY);
+
+  // stack pill
+  const pillW=w*0.62, pillH=h*0.36, px=pos.x-pillW/2, py=stackY-pillH/2;
+  roundRect(ctx,px,py,pillW,pillH,pillH/2);
+  ctx.fillStyle='rgba(0,0,0,.32)'; ctx.fill();
+  ctx.fillStyle = winner?'#ffd54a':'#7ee08a';
+  ctx.font='800 '+Math.round(h*0.27)+'px Segoe UI, sans-serif';
+  ctx.fillText(fmt(p.stack), pos.x, stackY+1);
+
+  // human turn bar
+  if(p.idx===currentPlayer && turnActive && !handOver){
+    const frac=clamp(0,(turnEndsAt-performance.now())/(TURN_TIME*1000),1);
+    const bw=w*0.84, bx=pos.x-bw/2, by=y+h+5;
+    roundRect(ctx,bx,by,bw,4,2); ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fill();
+    roundRect(ctx,bx,by,bw*frac,4,2);
+    ctx.fillStyle = frac<0.3 ? '#d6263b' : '#7ee08a'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ----------------------- Chip animations ------------------------- */
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function potAnchor(g){ return {x:g.cx, y:g.commCY - g.commCardH/2 - 18}; }
+function betAnchor(g,p){
+  if(p.idx===0) return {x:g.cx, y:g.humanCardsCY - g.humanCardH/2 - 18};
+  const pos=g.seats[p.idx];
+  return {x:pos.x+(g.cx-pos.x)*0.34, y:pos.y+(g.commCY-pos.y)*0.34};
+}
+function chipCountFor(amt){ return clamp(2, Math.round(amt/Math.max(1,bigBlind)), 6); }
+function spawnChipBurst(x0,y0,x1,y1,count,dur,delay,color,fade){
+  const now=performance.now();
+  for(let i=0;i<count;i++){
+    chipFx.push({
+      x0:x0+(Math.random()-0.5)*14, y0:y0+(Math.random()-0.5)*14,
+      x1:x1+(Math.random()-0.5)*18, y1:y1+(Math.random()-0.5)*18,
+      t0: now+(delay||0)+i*(dur*0.08), dur, color:color||'#d6263b', fade:!!fade
+    });
+  }
+}
+// Fin des mises : les jetons de chaque joueur filent vers le pot.
+function collectBetsAnim(){
+  if(!started) return;
+  const g=L(), pa=potAnchor(g);
+  players.forEach(p=>{
+    if(p.bet>0 && !p.busted){
+      const b=betAnchor(g,p);
+      spawnChipBurst(b.x,b.y, pa.x,pa.y, chipCountFor(p.bet), 300, 0, '#d6263b', false);
+    }
+  });
+}
+// Attribution : les jetons du pot filent vers le gagnant puis s'effacent.
+function spawnAwardAnim(toIdx, delay){
+  if(!started) return;
+  const g=L(), pa=potAnchor(g);
+  const seat = toIdx===0 ? {x:g.cx, y:g.humanPodCY} : g.seats[toIdx];
+  spawnChipBurst(pa.x,pa.y, seat.x,seat.y, 7, 430, delay||0, '#ffd54a', true);
+}
+function drawChip(x,y,r,color,alpha){
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fillStyle=color; ctx.fill();
+  ctx.lineWidth=2; ctx.setLineDash([3,3]); ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(x,y,r*0.5,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,255,255,.45)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.restore();
+}
+function drawChipFx(){
+  if(!chipFx.length) return;
+  const now=performance.now();
+  for(let i=chipFx.length-1;i>=0;i--){
+    const c=chipFx[i];
+    const t=(now-c.t0)/c.dur;
+    if(t<0){ drawChip(c.x0,c.y0,7,c.color,1); continue; }
+    if(t>=1){ chipFx.splice(i,1); continue; }
+    const e=easeInOut(t);
+    let a=1;
+    if(c.fade && t>0.8) a=1-(t-0.8)/0.2;        // les jetons gagnés s'effacent à l'arrivée
+    drawChip(c.x0+(c.x1-c.x0)*e, c.y0+(c.y1-c.y0)*e, 7, c.color, a);
+  }
+}
+
+function drawBet(g,p,pos){
+  if(p.bet<=0) return;
+  const fa = p.busted ? playerAlpha(p) : 1;
+  if(p.busted && fa<=0) return;
+  const cx=g.cx, cy=g.commCY;
+  let bx, by;
+  if(p.idx===0){
+    // Joueur humain : ses cartes (grandes) sont dessinées par-dessus, donc on
+    // place la mise dans le feutre libre AU-DESSUS des cartes (jamais cachée).
+    bx = cx;
+    by = (g.humanCardsCY - g.humanCardH/2) - 18;
+  } else {
+    bx = pos.x + (cx-pos.x)*0.34;
+    by = pos.y + (cy-pos.y)*0.34;
+  }
+  const txt=fmt(p.bet);
+  ctx.save();
+  ctx.globalAlpha=fa;
+  ctx.font='700 13px Segoe UI, sans-serif';
+  const tw=ctx.measureText(txt).width;
+  const pad=8, ch=22, r=11, cr=8;
+  // chip
+  ctx.beginPath(); ctx.arc(bx-tw/2-pad-cr, by, cr,0,Math.PI*2);
+  ctx.fillStyle='#d6263b'; ctx.fill();
+  ctx.lineWidth=2; ctx.setLineDash([3,3]); ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.stroke();
+  ctx.setLineDash([]);
+  // amount pill
+  roundRect(ctx, bx-tw/2-pad, by-ch/2, tw+pad*2, ch, r);
+  ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fill();
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(txt, bx+cr*0.2, by+1);
+  ctx.restore();
+}
+
+function drawDealerButton(g){
+  const seat=g.seats[dealer];
+  if(!seat || players[dealer].busted) return;
+  const dx=seat.x + (g.cx-seat.x)*0.26;
+  const dy=seat.y + (g.commCY-seat.y)*0.26 + (dealer===0?-g.podH*0.7:0);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(dx,dy,12,0,Math.PI*2);
+  ctx.fillStyle='#f5f5f5'; ctx.fill();
+  ctx.lineWidth=1.5; ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.stroke();
+  ctx.fillStyle='#1a1a1a'; ctx.font='800 13px Segoe UI, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('D', dx, dy+1);
+  ctx.restore();
+}
+
+function drawCommunity(g){
+  const n=community.length;
+  const total=5*g.commCardW + 4*g.commGap;
+  let sx=g.cx-total/2;
+  for(let i=0;i<5;i++){
+    const x=sx+i*(g.commCardW+g.commGap), y=g.commCY-g.commCardH/2;
+    if(i<n){ drawCard(x,y,g.commCardW,g.commCardH,community[i],true); }
+    else {
+      roundRect(ctx,x,y,g.commCardW,g.commCardH,Math.max(3,g.commCardW*0.12));
+      ctx.fillStyle='rgba(0,0,0,.13)'; ctx.fill();
+      ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.stroke();
+    }
+  }
+  // pot pill above
+  if(pot>0){
+    const txt='Pot : '+fmt(pot);
+    ctx.font='800 15px Segoe UI, sans-serif';
+    const tw=ctx.measureText(txt).width, pw=tw+26, ph=26;
+    const px=g.cx-pw/2, py=g.commCY-g.commCardH/2-ph-8;
+    roundRect(ctx,px,py,pw,ph,13);
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(txt, g.cx, py+ph/2+1);
+  }
+}
+
+function drawAICards(g, p, pos, onTop){
+  const hasReal = p.cards && p.cards.length===2;
+  let holding, faceUp;
+  if(isGuest()){ holding = !!p.hasCards || hasReal; faceUp = hasReal; }   // cartes réelles seulement si révélées
+  else { holding = hasReal; faceUp = revealAll && inHand(p); }
+
+  const w=g.podW*0.30, h=w*1.4, gap=w*0.18;
+  const totalW=w*2+gap;
+  const x=pos.x-totalW/2, y=pos.y-g.podH*0.5-h*0.62;
+  const c0 = hasReal ? p.cards[0] : {r:2,s:0};
+  const c1 = hasReal ? p.cards[1] : {r:2,s:0};
+
+  // Joueur éliminé : ses cartes disparaissent avec lui (fondu + rétrécissement).
+  if(p.busted){
+    const fa=playerAlpha(p);
+    if(fa<=0 || !onTop) return;
+    if(!holding && !hasReal) return;
+    const s=0.80+0.20*fa, fUp = hasReal && !p.folded;
+    ctx.save(); ctx.globalAlpha=fa;
+    ctx.translate(pos.x, pos.y-(1-fa)*12); ctx.scale(s,s); ctx.translate(-pos.x,-pos.y);
+    drawCard(x, y, w,h, c0, fUp);
+    drawCard(x+w+gap, y, w,h, c1, fUp);
+    ctx.restore();
+    return;
+  }
+  if(!holding) return;
+
+  const reveal = faceUp;
+  if(onTop && !reveal) return;        // peek behind pod only when hidden
+  if(!onTop && reveal) return;        // revealed cards drawn on top pass
+  const a = p.folded ? 0.4 : 1;
+  ctx.save(); ctx.globalAlpha=a;
+  drawCard(x,            y, w,h, c0, reveal);
+  drawCard(x+w+gap,      y, w,h, c1, reveal);
+  ctx.restore();
+  // hand name at showdown
+  if(reveal && hasReal){
+    const ev=bestOf(p.cards.concat(community));
+    if(ev){
+      const txt=handName(ev);
+      ctx.font='700 12px Segoe UI, sans-serif';
+      const tw=ctx.measureText(txt).width;
+      const px=pos.x-tw/2-7, py=pos.y+g.podH*0.5+4;
+      roundRect(ctx,px,py,tw+14,18,9);
+      ctx.fillStyle='rgba(0,0,0,.65)'; ctx.fill();
+      ctx.fillStyle=p.lastWin>0?'#ffd54a':'#cdd4dd';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(txt, pos.x, py+9);
+    }
+  }
+}
+
+function drawHumanCards(g){
+  const p=players[0];
+  if(p.cards.length<2) return;
+  const w=g.humanCardW, h=g.humanCardH, gap=w*0.16;
+  const totalW=w*2+gap;
+  const x=g.cx-totalW/2, y=g.humanCardsCY-h/2;
+  const a=p.folded?0.45:1;
+  ctx.save(); ctx.globalAlpha=a;
+  drawCard(x, y, w,h, p.cards[0], true);
+  drawCard(x+w+gap, y, w,h, p.cards[1], true);
+  ctx.restore();
+  if(revealAll && inHand(p)){
+    const ev=bestOf(p.cards.concat(community));
+    if(ev){
+      const txt=handName(ev);
+      ctx.font='800 13px Segoe UI, sans-serif';
+      const tw=ctx.measureText(txt).width;
+      roundRect(ctx, g.cx-tw/2-9, y-24, tw+18, 20, 10);
+      ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fill();
+      ctx.fillStyle=p.lastWin>0?'#ffd54a':'#cdd4dd';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(txt, g.cx, y-14);
+    }
+  }
+}
+
+function drawHeader(g){
+  const h=g.headerH;
+  // bg strip
+  ctx.fillStyle='rgba(8,10,14,.55)';
+  ctx.fillRect(0,0,g.W,h);
+  ctx.fillStyle='rgba(255,255,255,.06)';
+  ctx.fillRect(0,h-1,g.W,1);
+  // MENU button (left)
+  const mw=clamp(74,g.W*0.16,96), mh=h*0.6, mx=12, my=(h-mh)/2;
+  roundRect(ctx,mx,my,mw,mh,9);
+  const mg=ctx.createLinearGradient(0,my,0,my+mh);
+  mg.addColorStop(0,'#3a4049'); mg.addColorStop(1,'#22262d');
+  ctx.fillStyle=mg; ctx.fill();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.stroke();
+  ctx.fillStyle='#e8ebef'; ctx.font='700 '+Math.round(mh*0.42)+'px Segoe UI, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('MENU', mx+mw/2, my+mh/2+1);
+  ui.menuRect={x:mx,y:my,w:mw,h:mh};
+  // center: blinds + level
+  const bl=BLINDS[level];
+  ctx.fillStyle='#cdd4dd'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='700 '+clamp(12,g.W*0.030,16)+'px Segoe UI, sans-serif';
+  ctx.fillText('Niveau '+(level+1)+'  ·  Blindes '+bl.sb+'/'+bl.bb+(bl.ante?(' (ante '+bl.ante+')'):''),
+    g.W/2, h/2);
+  // right: players left
+  const left=players.filter(p=>!p.busted).length;
+  ctx.textAlign='right'; ctx.fillStyle='#9aa2ad';
+  ctx.font='700 '+clamp(11,g.W*0.028,15)+'px Segoe UI, sans-serif';
+  ctx.fillText(left+' / '+players.length+' joueurs', g.W-14, h/2);
+}
+
+function drawLog(g){
+  const lines=logLines.slice(g.portrait?-2:-4);
+  if(!lines.length) return;
+  const maxW = g.W*(g.portrait?0.46:0.55);
+  ctx.save();
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.font='600 11px Segoe UI, sans-serif';
+  const x=12; let y=g.headerH+18;
+  for(const line of lines){
+    ctx.fillStyle='rgba(0,0,0,.45)';
+    const tw=Math.min(ctx.measureText(line).width, maxW);
+    roundRect(ctx,x-5,y-13,tw+10,16,5); ctx.fill();
+    ctx.fillStyle='rgba(220,226,233,.85)';
+    ctx.fillText(line, x, y, maxW);
+    y+=18;
+  }
+  ctx.restore();
+}
+
+/* ----------- Controls (canvas, rebuilt every frame) -------------- */
+function drawBtn(x,y,w,h,label,c1,c2,opts){
+  opts=opts||{};
+  ctx.save();
+  if(opts.disabled) ctx.globalAlpha=0.4;
+  roundRect(ctx,x,y,w,h,Math.min(12,h*0.30));
+  const g=ctx.createLinearGradient(0,y,0,y+h);
+  g.addColorStop(0,c1); g.addColorStop(1,c2);
+  ctx.fillStyle=g; ctx.fill();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,.16)'; ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='700 '+clamp(13,h*0.30,17)+'px Segoe UI, sans-serif';
+  if(opts.sub){
+    ctx.fillText(label, x+w/2, y+h*0.38);
+    ctx.font='800 '+clamp(12,h*0.26,15)+'px Segoe UI, sans-serif';
+    ctx.fillText(opts.sub, x+w/2, y+h*0.68);
+  } else {
+    ctx.fillText(label, x+w/2, y+h/2+1);
+  }
+  ctx.restore();
+}
+
+function drawControls(g){
+  ui.hot=[]; ui.slider=null;
+  const top=g.ctrlTop, H=g.ctrlH, W=g.W;
+  // panel bg
+  ctx.fillStyle='rgba(10,12,16,.82)';
+  ctx.fillRect(0,top,W,H);
+  ctx.fillStyle='rgba(255,255,255,.06)'; ctx.fillRect(0,top,W,1);
+
+  const pad=clamp(10,W*0.03,22);
+  const innerW=W-pad*2;
+
+  if(!awaitingHuman){
+    // waiting state: show whose turn + last action
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    let who='';
+    if(handOver) who='Fin de la main…';
+    else if(currentPlayer>=0 && players[currentPlayer]) who='Au tour de '+players[currentPlayer].name+'…';
+    else who='Distribution…';
+    ctx.fillStyle='#aeb6c1'; ctx.font='700 '+clamp(14,W*0.034,18)+'px Segoe UI, sans-serif';
+    ctx.fillText(who, W/2, top+H*0.34);
+    if(lastActionText){
+      ctx.fillStyle='#6f7783'; ctx.font='600 '+clamp(11,W*0.028,14)+'px Segoe UI, sans-serif';
+      ctx.fillText(lastActionText, W/2, top+H*0.60);
+    }
+    if(handOver){
+      ctx.fillStyle='#565d68'; ctx.font='600 12px Segoe UI, sans-serif';
+      ctx.fillText('(touchez pour accélérer)', W/2, top+H*0.82);
+    }
+    return;
+  }
+
+  const p=players[0];
+  const toCall=Math.max(0,currentBet-p.bet);
+  const allInTotal=p.bet+p.stack;
+  const minRaiseTotal=Math.min(currentBet+minRaise, allInTotal);
+  const canRaise = p.stack>toCall;     // a des jetons au-delà du call
+
+  let rowTop=top+10;
+  const gap=clamp(6,W*0.02,12);
+
+  if(canRaise){
+    // ---- quick-size buttons ----
+    const qH=clamp(26,H*0.20,34);
+    const qY=rowTop;
+    const labels=['Min','½ Pot','Pot','Tapis'];
+    const qW=(innerW-gap*3)/4;
+    const setTargets=[
+      minRaiseTotal,
+      Math.min(allInTotal, Math.max(minRaiseTotal, currentBet + Math.round((pot+toCall)*0.5))),
+      Math.min(allInTotal, Math.max(minRaiseTotal, currentBet + (pot+toCall))),
+      allInTotal
+    ];
+    for(let i=0;i<4;i++){
+      const qx=pad+i*(qW+gap);
+      const sel = Math.abs(betTarget-setTargets[i])<=bigBlind*0.5;
+      drawBtn(qx,qY,qW,qH,labels[i],
+        sel?'#4a525d':'#2c323b', sel?'#2c323b':'#1a1e24');
+      ui.hot.push({x:qx,y:qY,w:qW,h:qH,onClick:()=>{ betTarget=setTargets[i]; sfx('btn'); }});
+    }
+    // ---- slider ----
+    const sH=clamp(28,H*0.20,36);
+    const sY=qY+qH+8;
+    const trackX=pad+12, trackW=innerW-24, trackY=sY+sH/2;
+    // value bubble
+    const lo=minRaiseTotal, hi=allInTotal;
+    const frac=hi>lo ? clamp(0,(betTarget-lo)/(hi-lo),1) : 0;
+    const hx=trackX+trackW*frac;
+    // track
+    roundRect(ctx,trackX,trackY-3,trackW,6,3);
+    ctx.fillStyle='rgba(255,255,255,.16)'; ctx.fill();
+    roundRect(ctx,trackX,trackY-3,trackW*frac,6,3);
+    ctx.fillStyle='#e9b53b'; ctx.fill();
+    // handle
+    ctx.beginPath(); ctx.arc(hx,trackY,10,0,Math.PI*2);
+    ctx.fillStyle='#ffd54a'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+    // value label
+    ctx.fillStyle='#ffe9a8'; ctx.textAlign='center'; ctx.textBaseline='bottom';
+    ctx.font='800 13px Segoe UI, sans-serif';
+    ctx.fillText(fmt(betTarget), clamp(trackX+24,hx,trackX+trackW-24), trackY-12);
+    ui.slider={track:{x:pad,y:sY,w:innerW,h:sH}, lo, hi, trackX, trackW};
+    rowTop=sY+sH+8;
+  }
+
+  // ---- main action buttons ----
+  const bH = clamp(40,H*0.30,56);
+  const bY = top+H-bH-10;
+  if(canRaise){
+    const bw=(innerW-gap*2)/3;
+    // fold
+    let bx=pad;
+    drawBtn(bx,bY,bw,bH,'Se coucher','#c4313f','#8e1f29');
+    ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('fold')});
+    // check / call
+    bx=pad+bw+gap;
+    if(toCall===0){
+      drawBtn(bx,bY,bw,bH,'Parole','#3fae5e','#1f7a3c');
+      ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('check')});
+    } else {
+      drawBtn(bx,bY,bw,bH,'Suivre',(p.stack<=toCall?'#3fae5e':'#3fae5e'),'#1f7a3c',{sub:fmt(Math.min(toCall,p.stack))});
+      ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('call')});
+    }
+    // raise
+    bx=pad+(bw+gap)*2;
+    const isAllIn = betTarget>=allInTotal-0.5;
+    drawBtn(bx,bY,bw,bH, isAllIn?'Tapis':'Relancer','#e9b53b','#b8821a',
+      {sub: isAllIn?fmt(allInTotal):fmt(betTarget)});
+    ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('raise',betTarget)});
+  } else {
+    // only fold + call/check (call is all-in or no raise possible)
+    const bw=(innerW-gap)/2;
+    let bx=pad;
+    drawBtn(bx,bY,bw,bH,'Se coucher','#c4313f','#8e1f29');
+    ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('fold')});
+    bx=pad+bw+gap;
+    if(toCall===0){
+      drawBtn(bx,bY,bw,bH,'Parole','#3fae5e','#1f7a3c');
+      ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('check')});
+    } else {
+      const allIn = toCall>=p.stack;
+      drawBtn(bx,bY,bw,bH, allIn?'Suivre tapis':'Suivre','#3fae5e','#1f7a3c',{sub:fmt(Math.min(toCall,p.stack))});
+      ui.hot.push({x:bx,y:bY,w:bw,h:bH,onClick:()=>humanAction('call')});
+    }
+  }
+}
+
+/* ----------------------------- Frame ----------------------------- */
+function render(){
+  ctx.clearRect(0,0,cssW,cssH);
+  const g=L();
+  drawTable(g);
+
+  // community + pot
+  if(started) drawCommunity(g);
+
+  // bets
+  if(started) players.forEach(p=>{ if(!p.busted) drawBet(g,p,g.seats[p.idx]); });
+
+  // flying chips (collecte des mises / attribution du pot)
+  if(started) drawChipFx();
+
+  // AI cards behind pods (peek)
+  if(started) for(let i=1;i<players.length;i++) drawAICards(g,players[i],g.seats[i],false);
+
+  // pods
+  if(started) players.forEach(p=> drawPod(g,p,g.seats[p.idx]));
+
+  // AI revealed cards on top (showdown)
+  if(started) for(let i=1;i<players.length;i++) drawAICards(g,players[i],g.seats[i],true);
+
+  // dealer button
+  if(started) drawDealerButton(g);
+
+  // human cards
+  if(started) drawHumanCards(g);
+
+  // header + log + controls
+  drawHeader(g);
+  drawLog(g);
+  if(started) drawControls(g);
+
+  // expiration du temps de jeu : seul l'hôte (ou le solo) tranche
+  if((isHost()||isSolo()) && turnActive && !handOver && !modalOpen
+     && currentPlayer>=0 && players[currentPlayer] && players[currentPlayer].isHuman
+     && performance.now()>turnEndsAt){
+    const p=players[currentPlayer];
+    commitHumanAction(currentPlayer, (currentBet-p.bet===0)?'check':'fold');
+  }
+
+  requestAnimationFrame(render);
+}
+
+/* ----------------------------- Input ----------------------------- */
+function evtPos(e){
+  const r=canvas.getBoundingClientRect();
+  return {x:e.clientX-r.left, y:e.clientY-r.top};
+}
+canvas.addEventListener('pointerdown', e=>{
+  initAudio();
+  if(modalOpen) return;
+  const {x,y}=evtPos(e);
+  if(ui.menuRect && inRect(x,y,ui.menuRect)){ openMenu(); return; }
+  if(awaitingHuman && ui.slider && inRect(x,y,ui.slider.track)){
+    ui.sliderDrag=true; updateSlider(x); return;
+  }
+  for(const b of ui.hot){ if(inRect(x,y,b)){ b.onClick(); return; } }
+  // tap to skip handover delays
+  if(handOver) trySkip();
+});
+canvas.addEventListener('pointermove', e=>{
+  if(ui.sliderDrag){ updateSlider(evtPos(e).x); }
+});
+window.addEventListener('pointerup', ()=>{ ui.sliderDrag=false; });
+window.addEventListener('pointercancel', ()=>{ ui.sliderDrag=false; });
+
+function updateSlider(x){
+  if(!ui.slider) return;
+  const s=ui.slider;
+  const frac=clamp(0,(x-s.trackX)/s.trackW,1);
+  let v=s.lo + frac*(s.hi-s.lo);
+  // snap to big blind, keep exact all-in
+  v=Math.round(v/bigBlind)*bigBlind;
+  v=clamp(s.lo, v, s.hi);
+  if(x>=s.trackX+s.trackW-2) v=s.hi;
+  betTarget=v;
+}
+
+/* --------------------------- Overlays ---------------------------- */
+/* ======================= Networking core ========================= */
+function netBroadcast(msg){ guestConns.forEach(c=>{ if(c.open) netSafe(()=>c.send(msg)); }); }
+function netFx(kind, seats){
+  guestConns.forEach(c=>{
+    if(!c.open) return;
+    const s = seats ? seats.map(x=>rotForSeat(x, c._seat)) : null;
+    netSafe(()=>c.send({t:'fx', k:kind, seats:s}));
+  });
+}
+function seatData(p, recipient){
+  const visible = (p.idx===recipient) ||
+                  (revealAll && !p.folded && !p.busted && p.cards && p.cards.length===2);
+  return {
+    name:p.name||'', isHuman:!!p.isHuman, archetype:p.archetype||null,
+    stack:Math.round(p.stack||0), bet:Math.round(p.bet||0), totalBet:Math.round(p.totalBet||0),
+    folded:!!p.folded, allIn:!!p.allIn, busted:!!p.busted, hasActed:!!p.hasActed,
+    lastWin:Math.round(p.lastWin||0), place:p.place||null,
+    hasCards: !p.busted && !!p.cards && p.cards.length===2,
+    cards: (visible && p.cards && p.cards.length===2) ? p.cards.map(c=>({r:c.r,s:c.s})) : null
+  };
+}
+function snapshotFor(conn){
+  const S=conn._seat;
+  const seatsArr=new Array(MAX_SEATS).fill(null);
+  players.forEach(p=>{ seatsArr[rotForSeat(p.idx,S)] = seatData(p,S); });
+  const humanToAct = !handOver && currentPlayer>=0 && players[currentPlayer]
+                     && players[currentPlayer].isHuman && turnActive;
+  return {
+    t:'state', seats:seatsArr,
+    community: community.map(c=>({r:c.r,s:c.s})),
+    pot:Math.round(pot), currentBet:Math.round(currentBet), minRaise:Math.round(minRaise),
+    bigBlind, level, handNumber, street,
+    dealer: rotForSeat(dealer,S),
+    currentPlayer: currentPlayer<0?-1:rotForSeat(currentPlayer,S),
+    revealAll, handOver, eliminatedCount,
+    awaitSeat: humanToAct ? rotForSeat(currentPlayer,S) : -1,
+    turnActive, turnRemainingMs: turnActive ? Math.max(0, turnEndsAt-performance.now()) : 0,
+    log: logLines.slice(-8)
+  };
+}
+function netPush(){ if(!isHost()) return; guestConns.forEach(c=>{ if(c.open) netSafe(()=>c.send(snapshotFor(c))); }); }
+function startHeartbeat(){ stopHeartbeat(); hbTimer=setInterval(()=>{ if(isHost()) netPush(); }, 200); }
+function stopHeartbeat(){ if(hbTimer){ clearInterval(hbTimer); hbTimer=null; } }
+
+/* ---- Invité : appliquer l'état autoritaire reçu ---- */
+function applyState(s){
+  if(!players || players.length!==MAX_SEATS){
+    players=[]; for(let i=0;i<MAX_SEATS;i++) players.push({idx:i});
+  }
+  s.seats.forEach((sd,i)=>{
+    let p=players[i]; if(!p){ p={idx:i}; players[i]=p; }
+    p.idx=i;
+    if(sd==null){ p.empty=true; p.name=''; p.isHuman=false; p.folded=true; p.busted=true; p.cards=[]; p.stack=0; p.bet=0; p.lastWin=0; return; }
+    p.empty=false;
+    p.name=sd.name; p.isHuman=sd.isHuman; p.archetype=sd.archetype;
+    p.stack=sd.stack; p.bet=sd.bet; p.totalBet=sd.totalBet;
+    p.folded=sd.folded; p.allIn=sd.allIn; p.hasActed=sd.hasActed;
+    p.lastWin=sd.lastWin; p.place=sd.place; p.hasCards=sd.hasCards;
+    p.cards = sd.cards ? sd.cards : [];
+    if(sd.busted){ if(!p.busted){ p.busted=true; p.bustedAt=performance.now(); } }
+    else { p.busted=false; p.bustedAt=null; }
+  });
+  community=s.community||[];
+  pot=s.pot; currentBet=s.currentBet; minRaise=s.minRaise; bigBlind=s.bigBlind;
+  level=s.level; handNumber=s.handNumber; street=s.street;
+  dealer=s.dealer; currentPlayer=s.currentPlayer;
+  revealAll=s.revealAll; handOver=s.handOver; eliminatedCount=s.eliminatedCount;
+  logLines = s.log || [];
+  turnActive = s.turnActive;
+  if(turnActive) turnEndsAt = performance.now() + (s.turnRemainingMs||0);
+  if(s.awaitSeat===0){
+    if(!awaitingHuman){ awaitingHuman=true; beginHumanTurn(); }
+    turnEndsAt = performance.now() + (s.turnRemainingMs||0);
+  } else awaitingHuman=false;
+  started=true;
+}
+
+/* ---- Hôte : sièges et messages des invités ---- */
+function firstFreeSeat(){
+  for(let i=1;i<MAX_SEATS;i++){ if(!guestConns.some(c=>c._seat===i)) return i; }
+  return -1;
+}
+function lobbyList(){
+  const arr=[{seat:0, name:(myName||'Hôte'), host:true}];
+  guestConns.forEach(c=>{ if(c._seat!=null) arr.push({seat:c._seat, name:c._name||'…'}); });
+  arr.sort((a,b)=>a.seat-b.seat);
+  return arr;
+}
+function broadcastLobby(){
+  netBroadcast({t:'lobby', list:lobbyList(), code:roomCode});
+  if(isHost() && !netStarted) renderHostLobby();
+}
+function hostHandleData(conn, msg){
+  if(!msg||!msg.t) return;
+  if(msg.t==='join'){
+    conn._name=(''+(msg.name||'Joueur')).slice(0,14);
+    if(conn._seat==null){ const seat=firstFreeSeat(); if(seat<0){ netSafe(()=>conn.send({t:'full'})); conn.close(); return; } conn._seat=seat; }
+    broadcastLobby();
+  } else if(msg.t==='action'){
+    if(!netStarted) return;
+    const seat=conn._seat;
+    if(currentPlayer===seat && awaitingRemote===conn && !handOver && players[seat] && players[seat].isHuman){
+      commitHumanAction(seat, msg.action, msg.to);
+    }
+  }
+}
+function startHostLobby(){
+  if(typeof Peer==='undefined'){ showPeerError(); return; }
+  netRole='host'; netStarted=false; guestConns=[];
+  let tries=0;
+  const tryOpen=()=>{
+    roomCode=randCode();
+    if(peer){ try{peer.destroy();}catch(e){} }
+    peer=new Peer('serzepoker-'+roomCode);
+    peer.on('open', ()=>renderHostLobby());
+    peer.on('error', e=>{
+      if(e && e.type==='unavailable-id' && tries++<4) tryOpen();
+      else showPeerError(e);
+    });
+    peer.on('connection', conn=>{
+      conn.on('open', ()=>{
+        if(netStarted || firstFreeSeat()<0){ netSafe(()=>conn.send({t:'full'})); setTimeout(()=>{try{conn.close();}catch(e){}},250); return; }
+        conn._seat=firstFreeSeat(); conn._name='Joueur '+conn._seat;
+        guestConns.push(conn);
+        broadcastLobby();
+      });
+      conn.on('data', msg=>hostHandleData(conn,msg));
+      conn.on('close', ()=>hostGuestLeft(conn));
+      conn.on('error', ()=>hostGuestLeft(conn));
+    });
+  };
+  tryOpen();
+  renderHostLobby();
+}
+function hostGuestLeft(conn){
+  const seat=conn._seat;
+  guestConns=guestConns.filter(c=>c!==conn);
+  if(netStarted && seat!=null && players[seat]){
+    const p=players[seat];
+    if(p.isHuman && !p.busted){
+      const ai=makeAI(seat, (p.name||('Siège '+seat))+' (IA)');
+      Object.assign(p,{isHuman:false, local:false, conn:null, name:ai.name, archetype:ai.archetype, personality:ai.personality});
+      log(p.name+' : joueur déconnecté, repris par l’IA.');
+      if(currentPlayer===seat && awaitingRemote===conn){ awaitingRemote=null; gameStep(); }
+      netPush();
+    }
+  } else if(!netStarted) broadcastLobby();
+}
+function hostStartGame(){
+  if(!isHost()) return;
+  netStarted=true;
+  netBroadcast({t:'start'});
+  initAudio(); hideOverlay(); started=true;
+  initTournament();
+}
+
+/* ---- Invité : se connecter à un hôte ---- */
+function joinGame(code){
+  if(typeof Peer==='undefined'){ showPeerError(); return; }
+  netRole='guest';
+  roomCode=(''+code).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
+  if(peer){ try{peer.destroy();}catch(e){} }
+  peer=new Peer();
+  renderJoinWaiting('Connexion au serveur…');
+  peer.on('open', ()=>{
+    renderJoinWaiting('Connexion à la table '+roomCode+'…');
+    hostConn=peer.connect('serzepoker-'+roomCode, {reliable:true});
+    hostConn.on('open', ()=>{ netSafe(()=>hostConn.send({t:'join', name:myName})); renderJoinWaiting('Connecté. En attente de l’hôte…'); });
+    hostConn.on('data', msg=>guestHandleData(msg));
+    hostConn.on('close', ()=>{ if(started) alert('Connexion à l’hôte perdue.'); showStart(); });
+    hostConn.on('error', ()=>renderJoinWaiting('Table introuvable. Vérifiez le code.'));
+  });
+  peer.on('error', e=>{
+    if(e && e.type==='peer-unavailable') renderJoinWaiting('Table introuvable. Vérifiez le code.');
+    else showPeerError(e);
+  });
+}
+function guestHandleData(msg){
+  if(!msg||!msg.t) return;
+  if(msg.t==='lobby'){ lobbyData=msg; if(!started) renderGuestLobby(msg); }
+  else if(msg.t==='start'){ hideOverlay(); }     // started bascule à la 1ʳᵉ image d'état
+  else if(msg.t==='state'){ applyState(msg); }
+  else if(msg.t==='fx'){ if(msg.k==='collect') collectBetsAnim(); else if(msg.k==='award') (msg.seats||[]).forEach(s=>spawnAwardAnim(s,0)); }
+  else if(msg.t==='over'){ started=false; showNetOver(msg.name); }
+  else if(msg.t==='full'){ renderJoinWaiting('La table est pleine.'); }
+}
+function restartTournament(){
+  hideOverlay();
+  if(isGuest()) return;
+  started=true;
+  if(isHost()) netBroadcast({t:'start'});
+  initTournament();
+}
+function netQuit(){
+  stopHeartbeat();
+  guestConns.forEach(c=>{ try{c.close();}catch(e){} });
+  guestConns=[]; if(hostConn){ try{hostConn.close();}catch(e){} } hostConn=null;
+  if(peer){ try{peer.destroy();}catch(e){} } peer=null;
+  netRole='solo'; netStarted=false; started=false;
+  clearTimeout(pendingTimer);
+  showStart();
+}
+function randCode(){ const C='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=C[Math.floor(Math.random()*C.length)]; return s; }
+function esc(s){ return (''+s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+/* ---- Salons / écrans réseau ---- */
+function wireDiff(){
+  const seg=document.getElementById('diffSeg'); if(!seg) return;
+  const paint=()=>seg.querySelectorAll('button').forEach(b=>b.classList.toggle('sel', b.dataset.d===difficulty));
+  paint();
+  seg.querySelectorAll('button').forEach(b=> b.onclick=()=>{ difficulty=b.dataset.d; paint(); });
+}
+function renderHostLobby(){
+  const list=lobbyList(); const ai=MAX_SEATS-list.length;
+  const rows=list.map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}${p.host?' · vous':''}</div>`).join('')
+            + (ai>0?`<div class="lobby-row dim">+ ${ai} siège(s) comblé(s) par l’IA</div>`:'');
+  showOverlay(`
+    <div class="ov-kicker">Salon en ligne — Hôte</div>
+    <h1 class="ov-title">Code&nbsp;: <span style="color:var(--gold);letter-spacing:.12em">${esc(roomCode||'…')}</span></h1>
+    <p class="ov-sub">Communiquez ce code aux autres joueurs. Jusqu’à ${MAX_SEATS} joueurs ; les sièges libres sont tenus par l’IA.</p>
+    <div class="lobby-list">${rows}</div>
+    <div class="diff-title">Niveau de l’IA</div>
+    <div class="seg" id="diffSeg">
+      <button data-d="facile">Facile<span class="lbl">passifs</span></button>
+      <button data-d="normal">Normal<span class="lbl">équilibrés</span></button>
+      <button data-d="agressif">Agressif<span class="lbl">bluffeurs</span></button>
+    </div>
+    <button class="ov-btn primary" id="btnGo">Démarrer la partie</button>
+    <button class="ov-btn ghost" id="btnCancel">Annuler</button>
+  `);
+  wireDiff();
+  document.getElementById('btnGo').onclick=hostStartGame;
+  document.getElementById('btnCancel').onclick=netQuit;
+}
+function renderGuestLobby(msg){
+  const rows=(msg.list||[]).map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}</div>`).join('');
+  showOverlay(`
+    <div class="ov-kicker">Salon en ligne — Invité</div>
+    <h1 class="ov-title">Table ${esc(msg.code||roomCode)}</h1>
+    <p class="ov-sub">En attente du lancement par l’hôte…</p>
+    <div class="lobby-list">${rows}</div>
+    <button class="ov-btn ghost" id="btnLeave">Quitter</button>
+  `);
+  document.getElementById('btnLeave').onclick=netQuit;
+}
+function renderJoinWaiting(text){
+  showOverlay(`
+    <div class="ov-kicker">Rejoindre une partie</div>
+    <h1 class="ov-title">Table ${esc(roomCode||'…')}</h1>
+    <p class="ov-sub">${esc(text)}</p>
+    <button class="ov-btn ghost" id="btnLeave">Annuler</button>
+  `);
+  document.getElementById('btnLeave').onclick=netQuit;
+}
+function showPeerError(e){
+  showOverlay(`
+    <div class="ov-kicker" style="color:var(--red)">Connexion impossible</div>
+    <h1 class="ov-title">Multijoueur indisponible</h1>
+    <p class="ov-sub">Le serveur de mise en relation PeerJS est injoignable (hors-ligne ou bloqué par le réseau). Vous pouvez jouer en solo.</p>
+    <button class="ov-btn primary" id="bk">Retour</button>
+  `);
+  document.getElementById('bk').onclick=()=>{ netRole='solo'; showStart(); };
+}
+function showNetOver(name){
+  showOverlay(`
+    <div class="ov-kicker" style="color:var(--gold)">Partie terminée</div>
+    <h1 class="ov-title">${esc(name)} remporte la partie&nbsp;!</h1>
+    <button class="ov-btn primary" id="bk">Retour au menu</button>
+  `);
+  document.getElementById('bk').onclick=netQuit;
+}
+
+function showOverlay(html){
+  ovPanel.innerHTML=html;
+  overlay.classList.add('show');
+  modalOpen=true;
+}
+function hideOverlay(){
+  overlay.classList.remove('show');
+  modalOpen=false;
+  // resume human timer if needed
+  if(turnActive && awaitingHuman) turnEndsAt=performance.now()+TURN_TIME*1000;
+}
+
+function showStart(){
+  netRole='solo'; started=false;
+  showOverlay(`
+    <div class="ov-kicker">Sit &amp; Go · No-Limit</div>
+    <h1 class="ov-title">Texas Hold'em</h1>
+    <div class="chips-row">♠ ♥ ♦ ♣</div>
+    <label class="fld">Votre nom
+      <input id="nameInput" maxlength="14" value="${esc(myName)}" placeholder="Joueur" autocomplete="off">
+    </label>
+    <button class="ov-btn primary" id="bSolo">Solo · contre l’IA</button>
+    <button class="ov-btn ghost" id="bHost">Créer une partie en ligne</button>
+    <button class="ov-btn ghost" id="bJoin">Rejoindre une partie</button>
+  `);
+  const ni=document.getElementById('nameInput');
+  const grab=()=>{ myName=((ni.value||'').trim().slice(0,14))||'Joueur'; };
+  document.getElementById('bSolo').onclick=()=>{ grab(); showSolo(); };
+  document.getElementById('bHost').onclick=()=>{ grab(); startHostLobby(); };
+  document.getElementById('bJoin').onclick=()=>{ grab(); showJoinPrompt(); };
+}
+function showSolo(){
+  netRole='solo';
+  showOverlay(`
+    <div class="ov-kicker">Solo · contre l’IA</div>
+    <h1 class="ov-title">Texas Hold'em</h1>
+    <p class="ov-sub">Affrontez <b>4 adversaires</b> dans un tournoi à élimination.
+       Dernier joueur en jeu remporte la partie.</p>
+    <div class="diff-title">Niveau des adversaires</div>
+    <div class="seg" id="diffSeg">
+      <button data-d="facile">Facile<span class="lbl">passifs</span></button>
+      <button data-d="normal">Normal<span class="lbl">équilibrés</span></button>
+      <button data-d="agressif">Agressif<span class="lbl">bluffeurs</span></button>
+    </div>
+    <button class="ov-btn primary" id="btnPlay">Jouer</button>
+    <button class="ov-btn ghost" id="btnBack">Retour</button>
+  `);
+  wireDiff();
+  document.getElementById('btnPlay').onclick=()=>{ initAudio(); hideOverlay(); started=true; initTournament(); };
+  document.getElementById('btnBack').onclick=showStart;
+}
+function showJoinPrompt(){
+  showOverlay(`
+    <div class="ov-kicker">Rejoindre une partie</div>
+    <h1 class="ov-title">Code de la table</h1>
+    <p class="ov-sub">Saisissez le code à 4 caractères communiqué par l’hôte.</p>
+    <label class="fld">Code
+      <input id="codeInput" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase;letter-spacing:.2em;text-align:center;font-weight:800">
+    </label>
+    <button class="ov-btn primary" id="bGo">Rejoindre</button>
+    <button class="ov-btn ghost" id="bBack">Retour</button>
+  `);
+  const go=()=>{ const c=(document.getElementById('codeInput').value||'').trim(); if(c.length>=3) joinGame(c); };
+  document.getElementById('bGo').onclick=go;
+  document.getElementById('codeInput').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+  document.getElementById('bBack').onclick=showStart;
+}
+
+function openMenu(){
+  const dl={facile:'faciles',normal:'normaux',agressif:'agressifs'}[difficulty];
+  showOverlay(`
+    <div class="ov-kicker">Menu</div>
+    <h1 class="ov-title">Pause</h1>
+    <p class="ov-sub">Niveau ${level+1} · ${players.filter(p=>!p.busted).length} joueurs restants
+       · adversaires <b>${dl}</b></p>
+    <button class="ov-btn primary" id="mResume">Reprendre</button>
+    <button class="ov-btn ghost" id="mSound">Son : ${soundOn?'activé':'coupé'}</button>
+    <button class="ov-btn ghost" id="mNew">Nouvelle partie…</button>
+  `);
+  document.getElementById('mResume').onclick=hideOverlay;
+  document.getElementById('mSound').onclick=()=>{ soundOn=!soundOn; openMenu(); };
+  document.getElementById('mNew').onclick=()=> isSolo()? showStart() : netQuit();
+}
+
+function showVictory(){
+  showOverlay(`
+    <div class="ov-kicker" style="color:var(--gold)">Tournoi terminé</div>
+    <h1 class="ov-title">🏆 Victoire !</h1>
+    <p class="ov-sub">Vous avez éliminé tous vos adversaires et terminez <b>1ʳ</b>.</p>
+    <button class="ov-btn primary" id="vAgain">Rejouer</button>
+  `);
+  document.getElementById('vAgain').onclick=restartTournament;
+}
+function showEliminated(place){
+  showOverlay(`
+    <div class="ov-kicker" style="color:var(--red)">Éliminé</div>
+    <h1 class="ov-title">Fin de parcours</h1>
+    <p class="ov-sub">Vous terminez <b>${ordinal(place)}</b> sur ${players.length}.
+       La partie continue sans vous.</p>
+    <button class="ov-btn primary" id="eAgain">Rejouer</button>
+    <button class="ov-btn ghost" id="eWatch">Voir la fin</button>
+  `);
+  document.getElementById('eAgain').onclick=restartTournament;
+  document.getElementById('eWatch').onclick=()=>{ hideOverlay(); scheduleNext(600,startHand); };
+}
+function showDefeat(place){
+  showOverlay(`
+    <div class="ov-kicker" style="color:var(--red)">Tournoi terminé</div>
+    <h1 class="ov-title">Partie finie</h1>
+    <p class="ov-sub">Vous aviez terminé <b>${ordinal(place)}</b>. ${isSolo()?'Une autre IA a remporté le tournoi.':'Un autre joueur a remporté le tournoi.'}</p>
+    <button class="ov-btn primary" id="dAgain">Rejouer</button>
+  `);
+  document.getElementById('dAgain').onclick=restartTournament;
+}
+
+/* ----------------------------- Resize ---------------------------- */
+function resize(){
+  cssW=window.innerWidth; cssH=window.innerHeight;
+  const dpr=Math.min(window.devicePixelRatio||1, 2.5);
+  canvas.width=Math.round(cssW*dpr);
+  canvas.height=Math.round(cssH*dpr);
+  canvas.style.width=cssW+'px';
+  canvas.style.height=cssH+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', ()=> setTimeout(resize,150));
+
+/* ------------------------------ Boot ----------------------------- */
+resize();
+showStart();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
