@@ -314,6 +314,20 @@ function rotForSeat(seat, base){ return seat<0 ? -1 : (seat-base+MAX_SEATS)%MAX_
 function connForSeat(seat){ return guestConns.find(c=>c._seat===seat && c.open); }
 function netSafe(fn){ try{ fn(); }catch(e){ /* connexion fermée */ } }
 let soundOn=true, modalOpen=false, started=false;
+let theme='classic';   // 'classic' (feutre vert) | 'dark' (feutre noir)
+function loadPrefs(){
+  try{
+    const t=localStorage.getItem('serzepoker_theme'); if(t==='dark'||t==='classic') theme=t;
+    const s=localStorage.getItem('serzepoker_sound'); if(s==='0'||s==='1') soundOn=(s==='1');
+    const n=localStorage.getItem('serzepoker_name'); if(n) myName=(''+n).slice(0,14);
+  }catch(e){}
+}
+function savePref(k,v){ try{ localStorage.setItem('serzepoker_'+k, v); }catch(e){} }
+function feltStops(){
+  return theme==='dark'
+    ? ['#262b33','#161a20','#0a0c10']      // feutre noir
+    : ['#379a59','#23793f','#155029'];     // feutre vert
+}
 let difficulty='normal';            // 'facile' | 'normal' | 'agressif'
 const DIFF_MULT={
   facile:  {aggr:0.78, bluff:0.50, shove:0.60},
@@ -1058,7 +1072,8 @@ function drawTable(g){
   // felt
   roundRect(ctx,x,y,w,h,r);
   const felt=ctx.createRadialGradient(cx,cy-h*0.15,h*0.15,cx,cy,w*0.62);
-  felt.addColorStop(0,'#379a59'); felt.addColorStop(0.62,'#23793f'); felt.addColorStop(1,'#155029');
+  const fs=feltStops();
+  felt.addColorStop(0,fs[0]); felt.addColorStop(0.62,fs[1]); felt.addColorStop(1,fs[2]);
   ctx.fillStyle=felt; ctx.fill();
   ctx.lineWidth=clamp(3,h*0.018,7); ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.stroke();
   // inner hairline
@@ -2014,12 +2029,14 @@ function showStart(){
     <button class="ov-btn primary" id="bSolo">Solo · contre l’IA</button>
     <button class="ov-btn ghost" id="bHost">Créer une partie en ligne</button>
     <button class="ov-btn ghost" id="bJoin">Rejoindre une partie</button>
+    <button class="ov-btn ghost" id="bTheme">Thème : ${theme==='dark'?'Sombre 🌑':'Classique 🟢'}</button>
   `);
   const ni=document.getElementById('nameInput');
-  const grab=()=>{ myName=((ni.value||'').trim().slice(0,14))||'Joueur'; };
+  const grab=()=>{ myName=((ni.value||'').trim().slice(0,14))||'Joueur'; savePref('name', myName); };
   document.getElementById('bSolo').onclick=()=>{ grab(); showSolo(); };
   document.getElementById('bHost').onclick=()=>{ grab(); startHostLobby(); };
   document.getElementById('bJoin').onclick=()=>{ grab(); joinGame(); };
+  document.getElementById('bTheme').onclick=()=>{ grab(); theme=(theme==='dark'?'classic':'dark'); savePref('theme', theme); showStart(); };
 }
 function showSolo(){
   netRole='solo';
@@ -2051,11 +2068,13 @@ function openMenu(){
     <p class="ov-sub">Niveau ${level+1} · ${players.filter(p=>!p.busted).length} joueurs restants
        · adversaires <b>${dl}</b></p>
     <button class="ov-btn primary" id="mResume">Reprendre</button>
-    <button class="ov-btn ghost" id="mSound">Son : ${soundOn?'activé':'coupé'}</button>
+    <button class="ov-btn ghost" id="mTheme">Thème : ${theme==='dark'?'Sombre 🌑':'Classique 🟢'}</button>
+    <button class="ov-btn ghost" id="mSound">Son : ${soundOn?'activé 🔊':'coupé 🔇'}</button>
     <button class="ov-btn ghost" id="mNew">Nouvelle partie…</button>
   `);
   document.getElementById('mResume').onclick=hideOverlay;
-  document.getElementById('mSound').onclick=()=>{ soundOn=!soundOn; openMenu(); };
+  document.getElementById('mTheme').onclick=()=>{ theme=(theme==='dark'?'classic':'dark'); savePref('theme', theme); openMenu(); };
+  document.getElementById('mSound').onclick=()=>{ soundOn=!soundOn; savePref('sound', soundOn?'1':'0'); openMenu(); };
   document.getElementById('mNew').onclick=()=> isSolo()? showStart() : netQuit();
 }
 
@@ -2105,6 +2124,7 @@ window.addEventListener('orientationchange', ()=> setTimeout(resize,150));
 
 /* ------------------------------ Boot ----------------------------- */
 resize();
+loadPrefs();
 showStart();
 requestAnimationFrame(render);
 </script>
