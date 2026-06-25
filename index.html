@@ -459,11 +459,18 @@ function makeAI(idx, name){
   const b=ARCHETYPES[arche];
   const jit=v=> clamp(0.02, v+(Math.random()-0.5)*0.10, 0.98);
   const m=DIFF_MULT[difficulty]||DIFF_MULT.normal;
+  // On rapproche chaque profil d'une base « solide » : moins de calling-station / maniac,
+  // donc des adversaires plus difficiles à exploiter tout en gardant un léger style.
+  const bal={aggr:0.66, bluff:0.18, tight:0.52, station:0.15, shove:0.50};
+  const mix=(v,base,k)=> v*(1-k)+base*k;
   return {
     name, isHuman:false, idx, archetype:arche,
     personality:{
-      aggr:jit(b.aggr*m.aggr), bluff:jit(b.bluff*m.bluff), tight:jit(b.tight),
-      station:jit(b.station), shove:jit(b.shove*m.shove)
+      aggr:    jit(mix(b.aggr,    bal.aggr,    0.45)*m.aggr),
+      bluff:   jit(mix(b.bluff,   bal.bluff,   0.50)*m.bluff),
+      tight:   jit(mix(b.tight,   bal.tight,   0.50)),
+      station: jit(mix(b.station, bal.station, 0.60)),   // bien moins de « calling station »
+      shove:   jit(mix(b.shove,   bal.shove,   0.40)*m.shove)
     }
   };
 }
@@ -788,6 +795,43 @@ function sizeRaisePot(p, frac){
   return Math.round(clamp(minTo, Math.max(to,minTo), p.bet+p.stack));
 }
 
+/* ---------- Lecture de la texture du tableau (sizing/bluff) ---------- */
+function boardTexture(board){
+  const t={wet:0, flushy:false, twoTone:false, monotone:false, paired:false, straighty:false, maxSuit:0, high:false};
+  if(board.length<3) return t;
+  const sc=[0,0,0,0]; board.forEach(c=>sc[c.s]++);
+  t.maxSuit=Math.max(...sc);
+  t.flushy=t.maxSuit>=3; t.twoTone=t.maxSuit===2; t.monotone=t.maxSuit>=3 && board.length===3;
+  const ranks=board.map(c=>c.r);
+  const uniq=[...new Set(ranks)].sort((a,b)=>a-b);
+  t.paired=uniq.length<board.length;
+  const span=uniq[uniq.length-1]-uniq[0];
+  t.straighty=(uniq.length>=3 && span<=4) || (uniq.length>=2 && span<=2);
+  t.high=Math.max(...ranks)>=12;
+  let w=0;
+  if(t.maxSuit>=3) w+=0.45; else if(t.maxSuit===2) w+=0.18;
+  if(t.straighty) w+=0.33; if(t.paired) w+=0.08;
+  t.wet=Math.min(1,w);
+  return t;
+}
+/* ---------- Blockers : nos cartes gênent-elles les grosses combos ? ---------- */
+function blockerScore(hole, board){
+  let s=0;
+  const hi=Math.max(hole[0].r,hole[1].r);
+  if(board.length<3){
+    if(hi===14) s+=0.55; else if(hi===13) s+=0.32; else if(hi===12) s+=0.16;
+    if(hole[0].r===hole[1].r && hi>=11) s+=0.12;
+    return Math.min(1,s);
+  }
+  const sc=[0,0,0,0]; board.forEach(c=>sc[c.s]++);
+  const maxSuit=Math.max(...sc), fs=sc.indexOf(maxSuit);
+  hole.forEach(c=>{ if(maxSuit>=3 && c.s===fs) s+=(c.r===14?0.5:c.r>=12?0.3:0.18); });
+  const top=Math.max(...board.map(c=>c.r));
+  hole.forEach(c=>{ if(c.r>=Math.max(12,top)) s+=0.16; });
+  return Math.min(1,s);
+}
+
+/* ===================== Cerveau de l'IA (style « pro » / GTO) ===================== */
 function aiDecide(p){
   const per=p.personality;
   const board=community;
@@ -798,141 +842,175 @@ function aiDecide(p){
   const minRaiseTotal=Math.min(currentBet+minRaise, allInTotal);
   const canFullRaise=allInTotal>currentBet+0.5;
   const potOdds=(pot+callable)>0 ? callable/(pot+callable) : 0;
-  const bbStack=p.stack/Math.max(1,bigBlind);
+  const bb=Math.max(1,bigBlind);
+  const bbStack=p.stack/bb;
   const nOpp=Math.max(1, players.filter(q=>q!==p && inHand(q)).length);
+  const multiway=nOpp>=2;
   const facingBet=toCall>0;
   const behind=playersToActAfter(p);
-  const stealy=behind<=1;                         // position tardive ~
+  const ip=behind===0;                                   // en position (parle en dernier)
   const committed=p.totalBet/(p.totalBet+p.stack+1e-6);
-  const spr=p.stack/Math.max(1,pot);              // stack-to-pot ratio
+  const spr=p.stack/Math.max(1,pot);
+  const rnd=Math.random;
 
-  // Équité réelle par Monte-Carlo (calcul, pas une simple heuristique).
-  const samples = street0?160 : (nOpp>=3?140:220);
-  let eq=clamp(0, mcEquity(p.cards, board, nOpp, samples)+(Math.random()-0.5)*0.05, 1);
+  // Réglages selon la difficulté (Normal = GTO solide ; Agressif = exploiteur ; Facile = plus faible).
+  const D = difficulty==='facile'   ? {bluff:0.55, def:0.86, val:-0.03, aggr:0.82, size:-0.05}
+          : difficulty==='agressif' ? {bluff:1.55, def:1.06, val:0.03,  aggr:1.22, size:0.06}
+          :                           {bluff:1.00, def:1.00, val:0.00,  aggr:1.00, size:0.00};
 
-  // Main faite + tirages (postflop) pour repérer la valeur et le semi-bluff.
+  // Équité réelle par Monte-Carlo (plus d'échantillons = plus précis = plus fort).
+  const samples = street0?200 : street===1?280 : street===2?320 : 360;
+  const eq=clamp(0, mcEquity(p.cards, board, nOpp, samples), 1);
+
+  // Conditionnement par l'agressivité adverse : une grosse mise => range plus forte.
+  const betFrac = facingBet ? callable/Math.max(1,pot) : 0;
+  let villainPenalty=0;
+  if(facingBet) villainPenalty = Math.min(0.20, betFrac*0.13 + street*0.018 + (nOpp-1)*0.035);
+  const eqEff = clamp(0, eq - villainPenalty, 1);        // équité « réaliste » face à l'action
+
+  // Main faite + tirages + texture + blockers.
   let madeCat=-1, draws=0;
-  if(!street0){
-    const ev=bestOf(p.cards.concat(board));
-    madeCat=ev.category;
-    draws=drawBonus(p.cards.concat(board));       // 0..0.22
-  }
+  if(!street0){ const ev=bestOf(p.cards.concat(board)); madeCat=ev.category; draws=drawBonus(p.cards.concat(board)); }
   const pf = street0 ? preflopStrength(p.cards[0],p.cards[1]) : 0;
   const drawy = draws>0.05;
+  const tex = boardTexture(board);
+  const block = blockerScore(p.cards, board);
 
-  // Seuils d'équité (tiennent compte du nombre d'adversaires restants).
-  const strongEq = 0.62 + (nOpp-1)*0.045;         // nettement devant
-  const goodEq   = 0.50 + (nOpp-1)*0.030;
+  // Seuils d'équité (ajustés au nombre d'adversaires et à la difficulté).
+  const strongEq = 0.66 + (nOpp-1)*0.05 - D.val;
+  const goodEq   = 0.54 + (nOpp-1)*0.035;
 
-  /* ============ PRÉFLOP : tapis / fold quand le tapis est court ============ */
+  /* ================= PRÉFLOP COURT : push / fold (proche Nash) ================= */
   if(street0){
-    const pushCeil = 9 + per.shove*9;             // ~9..18 BB selon l'archétype
+    const pushCeil = 10 + per.shove*8;                  // ~10..18 BB
     if(bbStack <= pushCeil){
-      // On ne peut que suivre tapis ou se coucher : décision aux cotes.
-      if(facingBet && callable >= p.stack*0.92){
-        let need = potOdds*(1-per.station*0.18) + (per.tight-0.5)*0.05;
-        return (eq>=need || pf>=0.80) ? {action:'call'} : {action:'fold'};
+      if(facingBet && callable >= p.stack*0.9){          // on ne peut que call-tapis ou fold
+        const need = potOdds*(1 - per.station*0.15)*D.def + 0.015;
+        return (eqEff>=need || pf>=0.78) ? {action:'call'} : {action:'fold'};
       }
-      // Sinon : on peut faire tapis (open ou sur-relance) — valeur OU bluff.
-      // Seuils dépendant de la difficulté : Facile = plus prudent, Agressif = plus large.
-      const vsPf = difficulty==='facile'?0.60 : difficulty==='agressif'?0.47 : 0.52;
-      const vsEq = difficulty==='facile'?0.63 : difficulty==='agressif'?0.55 : 0.58;
-      const plBar= difficulty==='facile'?0.34 : difficulty==='agressif'?0.24 : 0.28;
-      const valueShove = pf>=vsPf || eq>=vsEq;                       // bonne main
-      const playable   = pf>=plBar;                                  // jouable
-      let bluffP = per.shove*(stealy?1.0:0.5)*(facingBet?0.4:1);
-      const bluffShove = playable && Math.random()<bluffP;
-      const airShove   = !playable && stealy && Math.random()<bluffP*0.45;
-      if(valueShove || bluffShove || airShove)
-        return canFullRaise ? {action:'raise', to:allInTotal} : {action:'call'};
-      if(facingBet && eq>=potOdds*1.05) return {action:'call'};
-      if(!facingBet) return {action:'check'};
+      const vsPf = difficulty==='facile'?0.58 : difficulty==='agressif'?0.46 : 0.51;
+      const vsEq = difficulty==='facile'?0.62 : difficulty==='agressif'?0.55 : 0.58;
+      const plBar= difficulty==='facile'?0.33 : difficulty==='agressif'?0.24 : 0.28;
+      const valueShove = pf>=vsPf || eq>=vsEq;
+      const playable   = pf>=plBar;
+      const fe = ip?1.0:0.6;
+      const bluffP = per.shove*fe*(facingBet?0.4:1)*D.bluff;
+      const bluffShove = playable && rnd()<bluffP;
+      const airShove   = !playable && ip && rnd()<bluffP*0.4;
+      if(valueShove || bluffShove || airShove) return canFullRaise?{action:'raise',to:allInTotal}:{action:'call'};
+      if(facingBet && eqEff>=potOdds*1.03) return {action:'call'};
+      return facingBet?{action:'fold'}:{action:'check'};
+    }
+
+    // ---- Tapis profonds : ouverture (RFI) / 3-bet / 4-bet / défense ----
+    const cbb=currentBet/bb;
+    const unraised   = cbb<=1.1;
+    const singleRaise= cbb>1.1 && cbb<=4.6;
+
+    if(unraised){
+      const openThresh = clamp(0.40, 0.40 + 0.04*behind + (per.tight-0.5)*0.10 - (ip?0.02:0), 0.74);
+      const limpBehind = callable<=bb*0.6;
+      if(pf>=openThresh){
+        if(pf>=0.85 && rnd()<0.12) return {action:'call'};            // piège (slowplay) occasionnel
+        const sizeBB = (ip?2.2:2.6) + per.aggr*0.5 + rnd()*0.3;
+        return {action:'raise', to: clamp(minRaiseTotal, Math.round(bb*sizeBB), allInTotal)};
+      }
+      if(limpBehind && pf>=0.24) return {action:'call'};              // complète en SB/BB
+      if(facingBet && eqEff>=potOdds*1.06 && pf>=0.30 && rnd()<0.5) return {action:'call'};
+      return facingBet?{action:'fold'}:{action:'check'};
+    }
+
+    if(singleRaise){
+      const value3 = pf>=0.70 || eq>=0.60;                            // 3-bet valeur
+      const callRange = pf>=0.50 || (ip && pf>=0.45);
+      const bluff3P = clamp(0, (per.bluff*0.5 + block*0.5)*(ip?1.0:0.6)*D.bluff*0.5, 0.5);
+      if(value3 && canFullRaise){
+        if(bbStack<=40 && (pf>=0.80 || eq>=0.66) && rnd()<0.7) return {action:'raise', to:allInTotal};
+        return {action:'raise', to: clamp(minRaiseTotal, Math.round(currentBet*3), allInTotal)};
+      }
+      if(!value3 && pf>=0.34 && pf<0.62 && canFullRaise && rnd()<bluff3P)  // 3-bet bluff à blockers
+        return {action:'raise', to: clamp(minRaiseTotal, Math.round(currentBet*2.7), allInTotal)};
+      if(callRange) return {action:'call'};
+      if(callable<=bb*1.5 && pf>=0.36) return {action:'call'};        // défense BB à prix réduit
       return {action:'fold'};
     }
-    // Tapis profond : ouverture / 3-bet / suivi.
-    const justBlinds = currentBet <= bigBlind*1.05;   // personne n'a vraiment relancé
-    if(facingBet && justBlinds){
-      const openBar = 0.42 + per.tight*0.16 - (stealy?0.10:0) - per.aggr*0.04;
-      if(pf>=openBar || (stealy && pf>=openBar-0.08)){
-        if(pf<openBar+0.12 && Math.random()<0.18) return {action:'call'}; // limp piège
-        const sizeBB = 2.1 + per.aggr*0.9 + Math.random()*0.4;
-        let to=clamp(minRaiseTotal, Math.round(bigBlind*sizeBB), allInTotal);
-        return {action:'raise', to};
-      }
-      if(eq>=potOdds*1.1 && pf>=0.30 && Math.random()<0.5) return {action:'call'};
-      if(callable<=bigBlind*0.6 && pf>=0.25 && Math.random()<0.5) return {action:'call'};
-      return {action:'fold'};
+
+    // 3-bet+ : 4-bet/jam valeur, quelques bluffs à blockers, sinon call/fold.
+    const value4 = pf>=0.80 || eq>=0.66;
+    if(value4 && canFullRaise){
+      if(bbStack<=60 || rnd()<0.6) return {action:'raise', to:allInTotal};
+      return {action:'raise', to: clamp(minRaiseTotal, Math.round(currentBet*2.3), allInTotal)};
     }
-    // Face à une VRAIE relance préflop : 3-bet tapis (valeur) ou squeeze-bluff.
-    if(facingBet && !justBlinds && bbStack<=34 && canFullRaise){
-      if(pf>=0.62 && Math.random()<0.72) return {action:'raise', to:allInTotal}; // valeur
-      if(per.shove>0.5 && (pf>=0.30 || stealy) && Math.random()<per.shove*0.30)
-        return {action:'raise', to:allInTotal};                                  // bluff
-    }
-    // (Sinon, logique générale ci-dessous.)
+    if(pf>=0.62) return {action:'call'};                              // QQ/JJ/AK : payer
+    if(block>0.55 && canFullRaise && rnd()< per.bluff*0.12*D.bluff) return {action:'raise', to:allInTotal};
+    if(eqEff>=potOdds*1.05 && pf>=0.5) return {action:'call'};
+    return {action:'fold'};
   }
 
-  /* ================ PAS DE MISE À SUIVRE : check ou mise ================ */
+  /* ===================== POSTFLOP — pas de mise à suivre ===================== */
   if(!facingBet){
-    // Valeur : grosse main faite -> mise forte, voire tapis si SPR bas / court.
-    if(eq>=strongEq || madeCat>=2){
-      const nutty = madeCat>=4;                                 // quinte ou mieux
-      const wantJam = eq>=strongEq && (spr<=2.2 || bbStack<=24);
-      if((wantJam || (nutty && Math.random()<0.7)) && canFullRaise && Math.random()<0.82)
-        return {action:'raise', to:allInTotal};                 // tapis de valeur
-      return {action:'raise', to:sizeBet(p, 0.55+per.aggr*0.25)};
+    const nutty = madeCat>=4 || eq>=0.85;
+    const strongVal = eq>=strongEq || madeCat>=3;
+    const medVal = (eq>=goodEq) || madeCat===1 || madeCat===2;
+    const bigSize  = clamp(0.5, (tex.wet>0.5?0.8:0.66) + per.aggr*0.12 + D.size, 1.3);
+    const smallSize= clamp(0.28, 0.40 + D.size, 0.55);
+
+    if(strongVal){
+      const jam = (spr<=2.2 || bbStack<=22) && eq>=strongEq;
+      if(nutty && rnd()<0.18 && !jam) return {action:'check'};        // piège
+      if(jam && canFullRaise && rnd()<0.8) return {action:'raise', to:allInTotal};
+      const sz = (nutty && tex.wet>0.5)? clamp(0.8,1.25+D.size,1.6) : bigSize;  // overbet polarisé
+      return {action:'raise', to: sizeBet(p, sz)};
     }
-    // Semi-bluff avec tirage (équité + fold equity).
-    if(drawy && Math.random() < 0.42+per.aggr*0.4){
-      if(spr<=1.8 && canFullRaise && Math.random()<per.shove*0.7)
-        return {action:'raise', to:allInTotal};                 // tapis semi-bluff
-      return {action:'raise', to:sizeBet(p, 0.5+per.aggr*0.2)};
+    if(medVal && !multiway){                                          // value mince / pot control
+      if(rnd() < (ip?0.62:0.42)) return {action:'raise', to: sizeBet(p, smallSize)};
+      return {action:'check'};
     }
-    // Bluff pur (air) — surtout en short-handed, fréquence selon l'archétype.
-    if(nOpp<=2 && eq<goodEq && Math.random() < per.bluff*(stealy?1.1:0.65)){
-      if(bbStack<=18 && canFullRaise && Math.random()<per.shove*0.55)
-        return {action:'raise', to:allInTotal};                 // tapis de bluff
-      return {action:'raise', to:sizeBet(p, 0.5+per.aggr*0.3)};
+    if(drawy){                                                        // semi-bluff
+      const sbP = clamp(0, (0.45 + per.aggr*0.3)*D.aggr*(multiway?0.6:1), 0.95);
+      if(rnd()<sbP){
+        if(spr<=1.8 && canFullRaise && rnd()<per.shove*0.6) return {action:'raise', to:allInTotal};
+        return {action:'raise', to: sizeBet(p, bigSize*0.92)};
+      }
+      return {action:'check'};
     }
-    // Tapis POLARISÉ des joueurs agressifs : soit une main piège, soit un bluff total.
-    if(per.shove>0.5 && nOpp<=2 && bbStack<=42 && canFullRaise &&
-       Math.random() < per.shove*0.14)
-      return {action:'raise', to:allInTotal};
+    if(!multiway && eq<goodEq){                                       // bluff pur équilibré (MDF)
+      const s=smallSize;
+      const bluffFreq = clamp(0, (s/(1+2*s))*(0.7+block*0.8)*D.bluff*(ip?1.1:0.7), 0.6);
+      if(rnd()<bluffFreq) return {action:'raise', to: sizeBet(p, s)};
+    }
     return {action:'check'};
   }
 
-  /* ================== FACE À UNE MISE / RELANCE / TAPIS ================== */
-  // Engagé dans le pot -> on ne se couche pas avec une équité correcte.
-  if(committed>=0.42 && eq>=potOdds*0.85){
-    if(eq>=strongEq && canFullRaise) return {action:'raise', to:allInTotal};
+  /* ===================== POSTFLOP — face à une mise / relance ===================== */
+  if(committed>=0.45 && eqEff>=potOdds*0.85){               // déjà engagé : on ne lâche pas
+    if(eq>=strongEq && canFullRaise && rnd()<0.6) return {action:'raise', to:allInTotal};
     return {action:'call'};
   }
-  // Valeur : relance / tapis (tapis si court ou SPR bas).
-  if(eq>=strongEq){
+  if(eq>=strongEq){                                          // valeur : raise/jam (+ slowplay)
     if(canFullRaise){
-      if(bbStack<=26 || spr<=2.4 || Math.random()<0.30+per.aggr*0.4)
-        return {action:'raise', to:allInTotal};
-      return {action:'raise', to:sizeRaisePot(p, 0.9)};
+      if(rnd()<0.18) return {action:'call'};
+      if(bbStack<=26 || spr<=2.2 || rnd()<0.3+per.aggr*0.35) return {action:'raise', to:allInTotal};
+      return {action:'raise', to: sizeRaisePot(p, 0.9)};
     }
     return {action:'call'};
   }
-  // Semi-bluff avec tirage + fold equity (peut partir tapis).
-  if(drawy && canFullRaise && eq>=potOdds && Math.random()<(per.bluff*0.6+per.aggr*0.3)){
-    if(spr<=1.8 && Math.random()<per.shove*0.7) return {action:'raise', to:allInTotal};
-    return {action:'raise', to:sizeRaisePot(p, 0.8)};
+  if(drawy && canFullRaise && eqEff>=potOdds*0.85 && !multiway && rnd()<(0.35 + per.bluff*0.4)*D.aggr){
+    if(spr<=1.8 && rnd()<per.shove*0.6) return {action:'raise', to:allInTotal};  // semi-bluff raise
+    return {action:'raise', to: sizeRaisePot(p, 0.85)};
   }
-  // Suivi aux cotes (+ cotes implicites pour les tirages, + calling station).
-  let need = potOdds*(1-per.station*0.20);
-  if(drawy) need*=0.82;
-  need += (per.tight-0.5)*0.06;
-  if(eq>=need) return {action:'call'};
-  // Bluff-relance pur, parfois, en heads-up face à une petite mise.
-  const betFrac = toCall/Math.max(1,pot);
-  if(nOpp===1 && canFullRaise && betFrac<0.6 && Math.random()<per.bluff*0.5){
-    if(bbStack<=16 && Math.random()<per.shove*0.6) return {action:'raise', to:allInTotal};
-    return {action:'raise', to:sizeRaisePot(p, 0.85)};
+  // Défense / bluff-catch : cotes + cotes implicites + MDF (ne pas trop se coucher aux petites mises).
+  let need = potOdds * D.def * (1 - per.station*0.15);
+  if(drawy) need *= 0.80;
+  if(ip) need *= 0.95;
+  if(betFrac<0.6 && !multiway) need *= 0.92;                 // MDF : on défend plus large
+  if(multiway) need *= 1.12;
+  if(eqEff>=need) return {action:'call'};
+  if(!multiway && canFullRaise && betFrac<0.65 && rnd()<(per.bluff*0.4 + block*0.25)*D.bluff){
+    if(bbStack<=16 && rnd()<per.shove*0.6) return {action:'raise', to:allInTotal};  // bluff-raise
+    return {action:'raise', to: sizeRaisePot(p, 0.85)};
   }
-  if(callable<=p.stack*0.06 && eq>=0.20 && Math.random()<0.3) return {action:'call'}; // float
+  if(ip && callable<=p.stack*0.06 && eqEff>=0.22 && rnd()<0.35) return {action:'call'}; // float léger
   return {action:'fold'};
 }
 
