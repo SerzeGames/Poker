@@ -78,6 +78,49 @@
   .ov-btn.seg-toggle.on{border-color:var(--green);color:#dff5e4;
     background:linear-gradient(180deg,#244e34,#173524);}
   .ov-btn.primary[data-block]{filter:grayscale(.6) brightness(.7);cursor:default;}
+  .rng{width:100%;-webkit-appearance:none;appearance:none;height:6px;border-radius:4px;
+    background:#2b313a;outline:none;margin:2px 0 7px;}
+  .rng::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+    background:#ffd54a;border:2px solid #1a1d22;cursor:pointer;}
+  .rng::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#ffd54a;border:2px solid #1a1d22;cursor:pointer;}
+  .rng-val{text-align:center;font-weight:800;color:#ffd54a;font-size:15px;margin-bottom:13px;}
+  .stepper{display:flex;align-items:center;gap:10px;margin:0 0 14px;}
+  .stepper button{width:54px;height:46px;border-radius:11px;border:1px solid #3c424b;
+    background:linear-gradient(180deg,#2a2f37,#191c21);color:#eef1f4;font-size:24px;font-weight:800;cursor:pointer;}
+  .stepper button:disabled{opacity:.4;cursor:default;}
+  .stepper .step-val{flex:1;text-align:center;font-size:16px;font-weight:800;color:#e7ebf0;
+    background:#1a1e24;border:1px solid #2c323b;border-radius:11px;padding:12px 0;}
+  /* ---- Tchat ---- */
+  #chat{position:fixed;right:12px;bottom:16px;z-index:40;}
+  .chat-toggle{width:54px;height:54px;border-radius:50%;border:1px solid #3c424b;position:relative;
+    background:linear-gradient(180deg,#2a2f37,#14171c);color:#fff;font-size:24px;cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,0,0,.55);}
+  .chat-badge{position:absolute;top:-3px;right:-3px;background:#d6263b;color:#fff;font-size:11px;
+    font-weight:800;min-width:18px;height:18px;line-height:18px;border-radius:9px;padding:0 4px;}
+  .chat-panel{width:320px;max-width:88vw;height:340px;max-height:62vh;display:flex;flex-direction:column;
+    background:rgba(15,18,23,.97);border:1px solid #2c323b;border-radius:14px;overflow:hidden;
+    box-shadow:0 12px 34px rgba(0,0,0,.6);}
+  .chat-panel[hidden]{display:none;}
+  .chat-head{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;
+    border-bottom:1px solid #232931;font-weight:800;color:#e7ebf0;font-size:14px;}
+  .chat-head button{background:none;border:none;color:#9aa3ae;font-size:19px;cursor:pointer;line-height:1;}
+  .chat-msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 13px;
+    display:flex;flex-direction:column;gap:6px;}
+  .chat-msgs .cm{font-size:14px;line-height:1.35;color:#dfe4ea;word-break:break-word;}
+  .chat-msgs .cm b{color:#7ee08a;margin-right:5px;}
+  .chat-msgs .cm.sys{color:#8b94a0;font-style:italic;}
+  .chat-input{display:flex;gap:8px;padding:9px;border-top:1px solid #232931;}
+  .chat-input input{flex:1;min-width:0;background:#15181d;border:1px solid #3c424b;border-radius:10px;
+    color:#eef1f4;font-size:16px;padding:11px 12px;outline:none;}
+  .chat-input input:focus{border-color:var(--green);}
+  .chat-input button{background:linear-gradient(180deg,#2e6b43,#1c5030);border:1px solid #2e7d46;
+    color:#fff;font-weight:700;border-radius:10px;padding:0 14px;cursor:pointer;white-space:nowrap;}
+  /* Téléphone portrait (ex. S20 FE) : bouton au-dessus des commandes ; panneau en feuille basse */
+  @media (max-width:560px) and (orientation:portrait){
+    #chat{right:10px;bottom:200px;}
+    #chat.open{left:8px;right:8px;bottom:8px;}
+    #chat.open .chat-panel{width:auto;max-width:none;height:52vh;max-height:52vh;}
+  }
   #rotate{display:none;}
 </style>
 </head>
@@ -85,6 +128,17 @@
 <div id="game">
   <canvas id="cv"></canvas>
   <div id="overlay"><div class="card-panel" id="ovPanel"></div></div>
+  <div id="chat" style="display:none">
+    <button id="chatToggle" class="chat-toggle" aria-label="Tchat">💬<span id="chatBadge" class="chat-badge" hidden>0</span></button>
+    <div id="chatPanel" class="chat-panel" hidden>
+      <div class="chat-head"><span>💬 Tchat</span><button id="chatClose" aria-label="Fermer">✕</button></div>
+      <div id="chatMsgs" class="chat-msgs"></div>
+      <div class="chat-input">
+        <input id="chatInput" maxlength="200" placeholder="Votre message…" autocomplete="off">
+        <button id="chatSend">Envoyer</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -303,7 +357,9 @@ let myName='Joueur';
 let roomCode='';
 let awaitingRemote=null;// hôte : connexion dont on attend l'action (ou null)
 let netStarted=false;   // partie en ligne lancée
-let fillAI=true;        // hôte : compléter les sièges vides par des IA (sinon : humains seulement)
+let fillAI=true;        // (obsolète) — remplacé par aiCount ; conservé pour compat
+let startStack=START_STACK;   // hôte : tapis de départ réglable
+let aiCount=4;          // hôte : nombre d'ordinateurs (IA) souhaités
 let hbTimer=null;       // hôte : diffusion régulière de l'état
 let lobbyData=null;     // invité : dernière liste du salon reçue
 
@@ -323,10 +379,10 @@ function loadPrefs(){
   }catch(e){}
 }
 function savePref(k,v){ try{ localStorage.setItem('serzepoker_'+k, v); }catch(e){} }
-function feltStops(){
+function tableTheme(){
   return theme==='dark'
-    ? ['#262b33','#161a20','#0a0c10']      // feutre noir
-    : ['#379a59','#23793f','#155029'];     // feutre vert
+    ? { felt:['#101010','#060606','#000000'], rail:['#343434','#161616','#070707'] }   // table noire
+    : { felt:['#379a59','#23793f','#155029'], rail:['#4d525b','#2c3037','#191c21'] };   // feutre vert
 }
 let difficulty='normal';            // 'facile' | 'normal' | 'agressif'
 const DIFF_MULT={
@@ -422,18 +478,19 @@ function buildRoster(){
   const names=[...AI_NAMES].sort(()=>Math.random()-0.5);
   if(isHost()){
     players.push({ name:(myName||'Hôte'), isHuman:true, idx:0, local:true, conn:null });
+    let aiLeft = aiCount;
     for(let i=1;i<MAX_SEATS;i++){
       const c=connForSeat(i);
       if(c) players.push({ name:c._name||('Joueur '+i), isHuman:true, idx:i, local:false, conn:c });
-      else if(fillAI) players.push(makeAI(i, names.pop()));
-      else players.push({ name:'', isHuman:false, idx:i, empty:true });   // siège vide (sans IA)
+      else if(aiLeft>0){ players.push(makeAI(i, names.pop())); aiLeft--; }
+      else players.push({ name:'', isHuman:false, idx:i, empty:true });   // siège vide
     }
   } else { // solo
     players.push({ name:'Vous', isHuman:true, idx:0, local:true });
     for(let i=1;i<MAX_SEATS;i++) players.push(makeAI(i, names.pop()));
   }
   players.forEach(p=>{
-    p.stack=START_STACK; p.cards=[]; p.bet=0; p.totalBet=0;
+    p.stack=isHost()?startStack:START_STACK; p.cards=[]; p.bet=0; p.totalBet=0;
     p.folded=false; p.allIn=false; p.busted=false; p.hasActed=false;
     p.place=null; p.lastWin=0; p.bustedAt=null;
   });
@@ -1065,15 +1122,15 @@ function drawTable(g){
   // rail
   ctx.save();
   roundRect(ctx,x-14,y-14,w+28,h+28,r+14);
+  const TT=tableTheme();
   const rail=ctx.createLinearGradient(0,y-14,0,y+h+14);
-  rail.addColorStop(0,'#4d525b'); rail.addColorStop(0.5,'#2c3037'); rail.addColorStop(1,'#191c21');
+  rail.addColorStop(0,TT.rail[0]); rail.addColorStop(0.5,TT.rail[1]); rail.addColorStop(1,TT.rail[2]);
   ctx.fillStyle=rail; ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.stroke();
   // felt
   roundRect(ctx,x,y,w,h,r);
   const felt=ctx.createRadialGradient(cx,cy-h*0.15,h*0.15,cx,cy,w*0.62);
-  const fs=feltStops();
-  felt.addColorStop(0,fs[0]); felt.addColorStop(0.62,fs[1]); felt.addColorStop(1,fs[2]);
+  felt.addColorStop(0,TT.felt[0]); felt.addColorStop(0.62,TT.felt[1]); felt.addColorStop(1,TT.felt[2]);
   ctx.fillStyle=felt; ctx.fill();
   ctx.lineWidth=clamp(3,h*0.018,7); ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.stroke();
   // inner hairline
@@ -1644,6 +1701,14 @@ function render(){
     commitHumanAction(currentPlayer, (currentBet-p.bet===0)?'check':'fold');
   }
 
+  // tchat visible seulement pendant une partie en ligne (pas en solo, pas pendant un menu)
+  const chatEl=document.getElementById('chat');
+  if(chatEl){
+    const show = started && !isSolo() && !modalOpen;
+    chatEl.style.display = show ? '' : 'none';
+    if(!show && chatOpen) closeChat();
+  }
+
   requestAnimationFrame(render);
 }
 
@@ -1788,6 +1853,9 @@ function hostHandleData(conn, msg){
     if(currentPlayer===seat && awaitingRemote===conn && !handOver && players[seat] && players[seat].isHuman){
       commitHumanAction(seat, msg.action, msg.to);
     }
+  } else if(msg.t==='chat'){
+    const nm=conn._name||('Joueur '+conn._seat), tx=(''+msg.text).slice(0,200);
+    if(tx.trim()){ addChat(nm, tx); netBroadcast({t:'chatmsg', name:nm, text:tx}); }
   }
 }
 function startHostLobby(){
@@ -1824,7 +1892,7 @@ function hostGuestLeft(conn){
   if(netStarted && seat!=null && players[seat]){
     const p=players[seat];
     if(p.isHuman && !p.busted){
-      if(fillAI){
+      if(aiCount>0){
         const ai=makeAI(seat, (p.name||('Siège '+seat))+' (IA)');
         Object.assign(p,{isHuman:false, local:false, conn:null, name:ai.name, archetype:ai.archetype, personality:ai.personality});
         log(p.name+' : joueur déconnecté, repris par l’IA.');
@@ -1895,6 +1963,7 @@ function guestHandleData(msg){
   else if(msg.t==='start'){ hideOverlay(); }     // started bascule à la 1ʳᵉ image d'état
   else if(msg.t==='state'){ applyState(msg); }
   else if(msg.t==='fx'){ if(msg.k==='collect') collectBetsAnim(); else if(msg.k==='award') (msg.seats||[]).forEach(s=>spawnAwardAnim(s,0)); }
+  else if(msg.t==='chatmsg'){ addChat(msg.name, msg.text); }
   else if(msg.t==='over'){ started=false; showNetOver(msg.name); }
   else if(msg.t==='full'){ /* géré pendant le scan */ }
 }
@@ -1912,10 +1981,68 @@ function netQuit(){
   guestConns=[]; if(hostConn){ try{hostConn.close();}catch(e){} } hostConn=null;
   if(peer){ try{peer.destroy();}catch(e){} } peer=null;
   netRole='solo'; netStarted=false; started=false;
+  chatLog=[]; chatUnread=0; closeChat();
   clearTimeout(pendingTimer);
   showStart();
 }
 function esc(s){ return (''+s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+/* --------------------------- Tchat ------------------------------ */
+let chatLog=[];        // {name, text}
+let chatOpen=false;
+let chatUnread=0;
+function addChat(name, text){
+  text=(''+text).slice(0,200);
+  if(!text.trim()) return;
+  chatLog.push({name:(''+(name||'?')).slice(0,14), text});
+  if(chatLog.length>60) chatLog.shift();
+  if(!chatOpen) chatUnread++;
+  renderChat();
+}
+function sendChat(text){
+  text=(''+text).trim().slice(0,200);
+  if(!text) return;
+  if(isGuest()){ if(hostConn&&hostConn.open) netSafe(()=>hostConn.send({t:'chat', text})); }
+  else if(isHost()){ addChat(myName, text); netBroadcast({t:'chatmsg', name:myName, text}); }
+}
+function renderChat(){
+  const badge=document.getElementById('chatBadge');
+  if(badge){ if(chatUnread>0 && !chatOpen){ badge.hidden=false; badge.textContent=chatUnread>9?'9+':(''+chatUnread); } else badge.hidden=true; }
+  const box=document.getElementById('chatMsgs');
+  if(box){ box.innerHTML = chatLog.map(m=>`<div class="cm"><b>${esc(m.name)}</b>${esc(m.text)}</div>`).join(''); box.scrollTop=box.scrollHeight; }
+}
+function openChat(){
+  chatOpen=true; chatUnread=0;
+  const c=document.getElementById('chat'); c.classList.add('open');
+  document.getElementById('chatPanel').hidden=false;
+  document.getElementById('chatToggle').hidden=true;
+  renderChat();
+  setTimeout(()=>{ const i=document.getElementById('chatInput'); if(i) i.focus(); },60);
+}
+function closeChat(){
+  chatOpen=false;
+  const c=document.getElementById('chat'); c.classList.remove('open'); c.style.bottom='';
+  document.getElementById('chatPanel').hidden=true;
+  document.getElementById('chatToggle').hidden=false;
+  renderChat();
+}
+function setupChat(){
+  const tog=document.getElementById('chatToggle'); if(!tog) return;
+  tog.onclick=openChat;
+  document.getElementById('chatClose').onclick=closeChat;
+  const send=()=>{ const i=document.getElementById('chatInput'); const v=i.value; i.value=''; sendChat(v); };
+  document.getElementById('chatSend').onclick=send;
+  document.getElementById('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } });
+  // garder le champ visible au-dessus du clavier (mobile)
+  if(window.visualViewport){
+    const vv=window.visualViewport;
+    const adjust=()=>{ const kb=window.innerHeight - vv.height - vv.offsetTop;
+      const c=document.getElementById('chat');
+      if(chatOpen && kb>60) c.style.bottom=(kb+8)+'px'; else if(chatOpen) c.style.bottom='';
+    };
+    vv.addEventListener('resize', adjust); vv.addEventListener('scroll', adjust);
+  }
+}
 
 /* ---- Salons / écrans réseau ---- */
 function wireDiff(){
@@ -1925,32 +2052,51 @@ function wireDiff(){
   seg.querySelectorAll('button').forEach(b=> b.onclick=()=>{ difficulty=b.dataset.d; paint(); });
 }
 function renderHostLobby(){
-  const list=lobbyList(); const ai=MAX_SEATS-list.length;
-  const others=list.length-1, humans=list.length;
-  const emptyLine = ai>0 ? (fillAI
-        ? `<div class="lobby-row dim">+ ${ai} siège(s) comblé(s) par l’IA</div>`
-        : `<div class="lobby-row dim">${ai} siège(s) laissé(s) vide(s)</div>`) : '';
-  const rows=list.map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}${p.host?' · vous':''}</div>`).join('') + emptyLine;
-  const canStart = fillAI || humans>=2;
-  const goLabel = !fillAI && humans<2 ? 'En attente d’un 2ᵉ joueur…'
-                  : (humans>1 ? 'Démarrer ('+humans+' joueurs)' : 'Démarrer (solo + IA)');
+  const list=lobbyList();
+  const humans=list.length;
+  const maxAI = MAX_SEATS - humans;
+  if(aiCount>maxAI) aiCount=maxAI;
+  if(aiCount<0) aiCount=0;
+  const empties = MAX_SEATS - humans - aiCount;
+  const total = humans + aiCount;
+  const fillLines =
+      (aiCount>0?`<div class="lobby-row dim">+ ${aiCount} ordinateur(s) IA</div>`:'')
+    + (empties>0?`<div class="lobby-row dim">${empties} siège(s) vide(s)</div>`:'');
+  const rows=list.map(p=>`<div class="lobby-row">${p.host?'👑 ':'🧑 '}${esc(p.name)}${p.host?' · vous':''}</div>`).join('') + fillLines;
+  const canStart = total>=2;
+  const goLabel = !canStart ? 'En attente de joueurs (min. 2)…' : 'Démarrer ('+total+' joueurs)';
   showOverlay(`
     <div class="ov-kicker">Partie en ligne — Hôte</div>
     <h1 class="ov-title">En attente de joueurs…</h1>
-    <p class="ov-sub">Les joueurs qui cliquent sur <b>Rejoindre</b> arrivent ici automatiquement. ${fillAI?'Les sièges libres sont tenus par l’IA.':'Aucun ordinateur : la partie se joue entre humains.'}</p>
+    <p class="ov-sub">Les joueurs qui cliquent sur <b>Rejoindre</b> arrivent ici automatiquement.</p>
     <div class="lobby-list">${rows}</div>
-    <button class="ov-btn ghost seg-toggle ${fillAI?'':'on'}" id="btnAI">${fillAI?'🤖 Compléter avec des IA':'🧍 Sans ordinateur — humains seulement ✓'}</button>
-    ${fillAI?`<div class="diff-title">Niveau de l’IA</div>
+
+    <div class="diff-title">Tapis de départ</div>
+    <input type="range" id="stackRange" class="rng" min="500" max="20000" step="500" value="${startStack}">
+    <div class="rng-val"><span id="stackVal">${fmt(startStack)}</span> jetons</div>
+
+    <div class="diff-title">Ordinateurs (IA) — ${maxAI===0?'aucun siège libre':('max '+maxAI)}</div>
+    <div class="stepper">
+      <button id="aiMinus" ${aiCount<=0?'disabled':''}>−</button>
+      <div class="step-val"><span id="aiVal">${aiCount}</span> IA</div>
+      <button id="aiPlus" ${aiCount>=maxAI?'disabled':''}>+</button>
+    </div>
+
+    ${aiCount>0?`<div class="diff-title">Niveau de l’IA</div>
     <div class="seg" id="diffSeg">
       <button data-d="facile">Facile<span class="lbl">passifs</span></button>
       <button data-d="normal">Normal<span class="lbl">équilibrés</span></button>
       <button data-d="agressif">Agressif<span class="lbl">bluffeurs</span></button>
     </div>`:''}
+
     <button class="ov-btn primary" id="btnGo" ${canStart?'':'data-block="1"'}>${goLabel}</button>
     <button class="ov-btn ghost" id="btnCancel">Annuler</button>
   `);
-  if(fillAI) wireDiff();
-  document.getElementById('btnAI').onclick=()=>{ fillAI=!fillAI; renderHostLobby(); };
+  if(aiCount>0) wireDiff();
+  const sr=document.getElementById('stackRange'), sv=document.getElementById('stackVal');
+  sr.oninput=()=>{ startStack=parseInt(sr.value,10)||START_STACK; sv.textContent=fmt(startStack); };
+  document.getElementById('aiMinus').onclick=()=>{ if(aiCount>0){ aiCount--; renderHostLobby(); } };
+  document.getElementById('aiPlus').onclick =()=>{ if(aiCount<maxAI){ aiCount++; renderHostLobby(); } };
   document.getElementById('btnGo').onclick=()=>{ if(canStart) hostStartGame(); };
   document.getElementById('btnCancel').onclick=netQuit;
 }
@@ -2125,6 +2271,7 @@ window.addEventListener('orientationchange', ()=> setTimeout(resize,150));
 /* ------------------------------ Boot ----------------------------- */
 resize();
 loadPrefs();
+setupChat();
 showStart();
 requestAnimationFrame(render);
 </script>
